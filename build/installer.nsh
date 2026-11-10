@@ -1,5 +1,24 @@
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
+!include "MUI2.nsh"
+
+; Attach the show hook at the directory-page declaration, after the install-mode
+; page has consumed its own MUI hooks and selected the installation scope.
+!macroundef MUI_PAGE_DIRECTORY
+!macro MUI_PAGE_DIRECTORY
+  !insertmacro MUI_PAGE_INIT
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW ShowAppDirectory
+  !insertmacro MUI_PAGEDECLARATION_DIRECTORY
+!macroend
+
+!macro customHeader
+  !ifndef BUILD_UNINSTALLER
+    Function ShowAppDirectory
+      !insertmacro NormalizeAppDirectory
+      SendMessage $mui.DirectoryPage.Directory ${WM_SETTEXT} 0 "STR:$INSTDIR"
+    FunctionEnd
+  !endif
+!macroend
 
 !macro NormalizeAppDirectory
   StrCpy $0 "$INSTDIR" 1 -1
