@@ -13,6 +13,8 @@
 
 !macro customHeader
   !ifndef BUILD_UNINSTALLER
+    ; NSIS uses the final component of InstallDir when Browse selects a parent.
+    InstallDir "$LOCALAPPDATA\Programs\${APP_FILENAME}"
     Function ShowAppDirectory
       !insertmacro NormalizeAppDirectory
       SendMessage $mui.DirectoryPage.Directory ${WM_SETTEXT} 0 "STR:$INSTDIR"

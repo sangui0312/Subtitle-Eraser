@@ -1,6 +1,6 @@
 {
   "name": "subtitle-eraser",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "description": "A simple desktop workspace for video subtitle removal",
   "author": "Subtitle Eraser",
@@ -14,6 +14,7 @@
     "dev": "electron .",
     "test": "node --test tests/*.test.cjs",
     "smoke": "electron . --smoke",
+    "verify:installer": "node --use-system-ca tools/check-installer.cjs",
     "dist:win": "electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {
@@ -23,6 +24,7 @@
   "build": {
     "appId": "local.subtitleeraser.desktop",
     "productName": "SubtitleEraser",
+    "beforePack": "tools/check-installer.cjs",
     "asar": true,
     "directories": {
       "output": "dist"
