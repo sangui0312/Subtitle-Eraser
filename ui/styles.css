@@ -1189,3 +1189,204 @@ dialog::backdrop {
     margin-bottom: 10px;
   }
 }
+.compare-entry {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 4;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+}
+.comparison-dialog {
+  width: min(1500px, 96vw);
+  max-width: 96vw;
+  height: min(960px, 94vh);
+  max-height: 94vh;
+  padding: 20px;
+  overflow: hidden;
+}
+.comparison-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.comparison-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.comparison-heading h2 {
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 75vw;
+}
+.comparison-heading p {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.comparison-screen {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0b0f17;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.comparison-stage {
+  position: relative;
+  background: #0b0f17;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+.comparison-stage video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  position: absolute;
+  inset: 0;
+}
+#compareOriginal {
+  z-index: 1;
+}
+.comparison-label {
+  position: absolute;
+  top: 14px;
+  z-index: 2;
+  background: #0b0f17b3;
+  color: #fff;
+  font-size: 11px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+.original-label {
+  left: 14px;
+}
+.result-label {
+  right: 14px;
+}
+.comparison-divider {
+  width: 24px;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  z-index: 3;
+  cursor: ew-resize;
+  touch-action: none;
+  outline-offset: -4px;
+}
+.comparison-divider:before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 11px;
+  width: 2px;
+  background: #fff;
+  box-shadow: 0 0 5px #0005;
+}
+.comparison-divider span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #fff;
+  color: #172033;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  box-shadow: 0 2px 12px #0003;
+  pointer-events: none;
+}
+.comparison-transport {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.comparison-transport input {
+  flex: 1;
+  min-width: 60px;
+  accent-color: var(--accent);
+  height: 4px;
+}
+.comparison-audio {
+  font-size: 10px;
+  margin-left: 10px;
+}
+.comparison-error {
+  position: absolute;
+  z-index: 5;
+  bottom: 16px;
+  background: #172033e6;
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+.update-section {
+  border-top: 1px solid var(--line);
+  margin-top: 22px;
+  padding-top: 20px;
+}
+.update-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.update-heading h2 {
+  font-size: 13px;
+}
+.update-heading p {
+  font-size: 10px;
+  margin-top: 7px;
+  color: var(--muted);
+}
+.update-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+#updateNotes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  max-height: 110px;
+  overflow: auto;
+  background: var(--soft);
+  padding: 10px;
+  border-radius: 8px;
+}
+#updateProgress {
+  width: 100%;
+  height: 5px;
+  margin-top: 12px;
+  accent-color: var(--accent);
+}
+#settingsDialog {
+  max-height: min(800px, calc(100vh - 40px));
+  overflow-y: auto;
+}

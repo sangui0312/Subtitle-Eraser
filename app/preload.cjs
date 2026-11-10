@@ -26,6 +26,18 @@ contextBridge.exposeInMainWorld(
     chooseFolder: () => invoke("settings:folder"),
     saveSettings: (input) => invoke("settings:save", input),
     openDocs: (which) => invoke("docs:open", which),
+    updates: Object.freeze({
+      get: () => invoke("updates:get"),
+      check: () => invoke("updates:check"),
+      download: () => invoke("updates:download"),
+      install: () => invoke("updates:install"),
+      releases: () => invoke("updates:releases"),
+      onState: (callback) => {
+        const listener = (_event, value) => callback(value);
+        ipcRenderer.on("updates:state", listener);
+        return () => ipcRenderer.removeListener("updates:state", listener);
+      },
+    }),
     onState: (callback) => {
       const listener = (_event, value) => callback(value);
       ipcRenderer.on("workspace:state", listener);

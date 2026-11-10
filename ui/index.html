@@ -9,6 +9,8 @@
     />
     <title>字幕擦除</title>
     <link rel="stylesheet" href="styles.css" />
+    <script src="compare.js" defer></script>
+    <script src="updates.js" defer></script>
     <script src="renderer.js" defer></script>
   </head>
   <body>
@@ -162,6 +164,9 @@
             </div>
           </div>
           <div id="previewStage" class="preview-stage">
+            <button id="compareBtn" class="compare-entry" hidden>
+              双击预览 · 滑动对比 ↗
+            </button>
             <div id="emptyState" class="empty-state">
               <div class="empty-orbit">
                 <div class="empty-mark">
@@ -368,6 +373,34 @@
           <button type="button" class="button subtle close-dialog">取消</button
           ><button type="submit" class="button primary">保存设置</button>
         </div>
+        <section class="update-section" aria-label="软件更新">
+          <div class="update-heading">
+            <div>
+              <h2>软件更新</h2>
+              <p id="updateVersion">当前版本 1.1.0</p>
+            </div>
+            <button type="button" id="checkUpdateBtn" class="button subtle">
+              检查更新
+            </button>
+          </div>
+          <p id="updateStatus" class="help-text">
+            从 GitHub Releases 获取新版安装包。
+          </p>
+          <pre id="updateNotes" hidden></pre>
+          <progress id="updateProgress" max="100" value="0" hidden></progress>
+          <div class="update-actions">
+            <button type="button" id="releasesBtn" class="text-button">
+              GitHub 发布页面 ↗</button
+            ><button
+              type="button"
+              id="updateActionBtn"
+              class="button primary"
+              hidden
+            >
+              下载更新
+            </button>
+          </div>
+        </section>
       </form>
     </dialog>
     <dialog id="linkDialog">
@@ -420,6 +453,62 @@
           ><button class="button primary" value="start">确认并开始</button>
         </div>
       </form>
+    </dialog>
+    <dialog id="comparisonDialog" class="comparison-dialog">
+      <div class="comparison-heading">
+        <div>
+          <h2 id="comparisonTitle">视频对比</h2>
+          <p id="comparisonHint">左右拖动中线，查看擦除前后</p>
+        </div>
+        <button
+          id="closeComparisonBtn"
+          class="icon-button"
+          aria-label="关闭视频对比"
+        >
+          <svg><use href="#i-close" /></svg>
+        </button>
+      </div>
+      <div id="comparisonScreen" class="comparison-screen">
+        <div id="comparisonStage" class="comparison-stage">
+          <video id="compareResult" preload="auto" playsinline muted></video>
+          <video id="compareOriginal" preload="auto" playsinline></video>
+          <span class="comparison-label original-label">原视频</span
+          ><span id="resultLabel" class="comparison-label result-label"
+            >擦除结果</span
+          >
+          <div
+            id="comparisonDivider"
+            class="comparison-divider"
+            role="slider"
+            tabindex="0"
+            aria-label="原视频显示比例"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="50"
+          >
+            <span>↔</span>
+          </div>
+        </div>
+        <p id="comparisonError" class="comparison-error" hidden></p>
+      </div>
+      <div class="comparison-transport">
+        <button
+          id="comparePlayBtn"
+          class="icon-button"
+          aria-label="播放或暂停对比"
+        >
+          <svg><use href="#i-play" /></svg></button
+        ><span id="compareTime">00:00</span
+        ><input
+          id="compareSeek"
+          type="range"
+          min="0"
+          max="1000"
+          value="0"
+          aria-label="对比播放进度"
+        /><span id="compareDuration">00:00</span
+        ><span class="comparison-audio">原视频声音 · Esc 关闭</span>
+      </div>
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
   </body>

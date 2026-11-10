@@ -176,6 +176,8 @@ class Engine {
     this.patch(task, { duration, width, height });
   }
   enqueue(ids) {
+    if (this.suspended)
+      throw new Error("正在准备安装更新，请等待软件重新启动。");
     if (!this.hasKey()) throw new Error("请先在设置中填写 API Key。");
     if (!Array.isArray(ids) || !ids.length)
       throw new Error("请先添加待处理视频。");
@@ -456,7 +458,7 @@ class Engine {
     );
   }
   async pump() {
-    if (this.stopped || this.busy || !this.hasKey()) return;
+    if (this.stopped || this.suspended || this.busy || !this.hasKey()) return;
     const task =
       this.tasks.find((item) => TRACKED.has(item.state)) ||
       this.tasks.find((item) => item.state === "queued");

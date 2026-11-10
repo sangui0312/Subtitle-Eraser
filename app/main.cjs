@@ -16,6 +16,7 @@ const { pathToFileURL } = require("node:url");
 const { Store, writeJSON } = require("./store.cjs");
 const { Client, MIME } = require("./client.cjs");
 const { Engine } = require("./engine.cjs");
+const { UpdateController, REPOSITORY } = require("./updater.cjs");
 
 const smoke = !app.isPackaged && process.argv.includes("--smoke");
 if (smoke)
@@ -41,6 +42,7 @@ const locked = app.requestSingleInstanceLock();
 let win,
   store,
   engine,
+  updates,
   apiKey = "",
   credentialError = "";
 const page = path.resolve(__dirname, "../ui/index.html");
@@ -112,6 +114,13 @@ function handle(name, action) {
 }
 
 function installIPC() {
+  handle("updates:get", () => updates.getState());
+  handle("updates:check", () => updates.check());
+  handle("updates:download", () => updates.download());
+  handle("updates:install", () => updates.install());
+  handle("updates:releases", () =>
+    shell.openExternal(`${REPOSITORY}/releases`),
+  );
   handle("workspace:get", snapshot);
   handle("files:pick", async () => {
     const picked = await dialog.showOpenDialog(win, {
@@ -273,6 +282,48 @@ async function launch() {
     identity: () => createHash("sha256").update(apiKey).digest("hex"),
     onChange: broadcast,
   });
+  const nativeUpdater = smoke
+    ? require("../tests/updater-fixture.cjs").createUpdater()
+    : app.isPackaged
+      ? require("electron-updater").autoUpdater
+      : null;
+  updates = new UpdateController({
+    native: nativeUpdater,
+    version: app.getVersion(),
+    enabled: app.isPackaged || smoke,
+    onChange: (value) => {
+      if (win && !win.isDestroyed())
+        win.webContents.send("updates:state", value);
+    },
+    prepareInstall: () => {
+      if (
+        engine.busy ||
+        engine.tasks.some((task) =>
+          ["queued", "uploading", "submitting", "downloading"].includes(
+            task.state,
+          ),
+        )
+      ) {
+        throw new Error("请等待当前排队、上传或下载完成后再安装更新。");
+      }
+      engine.suspended = true;
+      clearTimeout(engine.timer);
+      engine.commit();
+      const backup = path.join(
+        app.getPath("userData"),
+        "backups",
+        `workspace-${app.getVersion()}-${Date.now()}.json`,
+      );
+      fs.mkdirSync(path.dirname(backup), { recursive: true });
+      fs.copyFileSync(store.file, backup);
+      if (!fs.readFileSync(backup).equals(fs.readFileSync(store.file)))
+        throw new Error("任务备份校验失败，请稍后重试更新。");
+    },
+    recoverInstall: () => {
+      engine.suspended = false;
+      engine.schedule(0);
+    },
+  });
   protocol.handle("media", mediaResponse);
   installIPC();
   win = new BrowserWindow({
@@ -310,6 +361,7 @@ async function launch() {
         store,
         app,
         safeStorage,
+        updates,
       });
       writeJSON(
         path.resolve(__dirname, "../validation/smoke-report.json"),

@@ -122,6 +122,10 @@ function renderPreview(task) {
   $("previewTitle").title = task?.name || "";
   $("emptyState").hidden = Boolean(task);
   $("videoFrame").hidden = !task;
+  $("compareBtn").hidden = !task;
+  $("compareBtn").textContent = task?.outputPreview
+    ? "双击预览 · 滑动对比 ↗"
+    : "双击放大预览 ↗";
   const key = task ? `${task.id}/${currentView}` : "";
   if (key !== previewKey) {
     previewKey = key;
@@ -598,9 +602,15 @@ $("playBtn").addEventListener("click", () => {
   if (video.paused) perform(() => video.play());
   else video.pause();
 });
-$("fullscreenBtn").addEventListener("click", () =>
-  perform(() => $("video").requestFullscreen()),
-);
+$("fullscreenBtn").addEventListener("click", () => openComparison());
+function openComparison() {
+  const task = current();
+  if (!task) return;
+  $("video").pause();
+  window.videoComparison.open(task, $("video").currentTime);
+}
+$("previewStage").addEventListener("dblclick", openComparison);
+$("compareBtn").addEventListener("click", openComparison);
 $("seekBar").addEventListener("input", (event) => {
   const video = $("video");
   if (Number.isFinite(video.duration))

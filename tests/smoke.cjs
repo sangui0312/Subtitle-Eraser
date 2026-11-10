@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-async function run({ win, engine, store, safeStorage }) {
+async function run({ win, engine, store, safeStorage, updates }) {
   const output = path.resolve(__dirname, "../validation");
   const fixture = path.join(output, "fixture.mp4");
   const execute = (script) => win.webContents.executeJavaScript(script, true);
@@ -102,6 +102,18 @@ async function run({ win, engine, store, safeStorage }) {
   );
   assert.equal(task.width, 1280);
   assert.equal(task.height, 720);
+  await execute(
+    'document.getElementById("previewStage").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));',
+  );
+  await until(
+    'document.getElementById("comparisonDialog").open && document.getElementById("compareOriginal").videoWidth === 1280 && document.getElementById("comparisonDivider").hidden',
+    "single original large preview",
+  );
+  await execute('document.getElementById("closeComparisonBtn").click();');
+  await until(
+    '!document.getElementById("compareOriginal").getAttribute("src")',
+    "single preview cleanup",
+  );
   await execute('document.getElementById("regionModeBtn").click();');
   await until(
     'document.getElementById("selectionOverlay").classList.contains("drawing-enabled")',
@@ -184,6 +196,72 @@ async function run({ win, engine, store, safeStorage }) {
     "output preview",
   );
   await screenshot("03-result-light.png");
+  await execute(
+    'document.getElementById("previewStage").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));',
+  );
+  await until(
+    'document.getElementById("comparisonDialog").open && document.getElementById("compareOriginal").videoWidth === 1280 && document.getElementById("compareResult").videoWidth === 1280',
+    "double-click video comparison",
+  );
+  assert.equal(
+    await execute(
+      'document.getElementById("comparisonDivider").getAttribute("aria-valuenow")',
+    ),
+    "50",
+  );
+  assert.equal(
+    await execute('document.getElementById("compareResult").muted'),
+    true,
+  );
+  const line = await execute(
+    `(() => { const rect = document.getElementById('comparisonStage').getBoundingClientRect(); return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), target: Math.round(rect.left + rect.width * .7) }; })()`,
+  );
+  win.webContents.sendInputEvent({
+    type: "mouseDown",
+    button: "left",
+    x: line.x,
+    y: line.y,
+    clickCount: 1,
+  });
+  win.webContents.sendInputEvent({
+    type: "mouseMove",
+    x: line.target,
+    y: line.y,
+  });
+  win.webContents.sendInputEvent({
+    type: "mouseUp",
+    button: "left",
+    x: line.target,
+    y: line.y,
+    clickCount: 1,
+  });
+  await until(
+    'Number(document.getElementById("comparisonDivider").getAttribute("aria-valuenow")) >= 69',
+    "comparison divider drag",
+  );
+  await screenshot("07-video-comparison.png");
+  await execute('document.getElementById("comparePlayBtn").click();');
+  await until(
+    'document.getElementById("compareOriginal").currentTime > .15 && document.getElementById("compareResult").currentTime > .15',
+    "synchronized playback",
+  );
+  const drift = await execute(
+    'Math.abs(document.getElementById("compareOriginal").currentTime - document.getElementById("compareResult").currentTime)',
+  );
+  assert.ok(drift < 0.15);
+  await execute(
+    'document.getElementById("comparePlayBtn").click(); document.getElementById("compareSeek").value = 500; document.getElementById("compareSeek").dispatchEvent(new Event("input"));',
+  );
+  await until(
+    'Math.abs(document.getElementById("compareOriginal").currentTime - 1) < .1 && Math.abs(document.getElementById("compareResult").currentTime - 1) < .1',
+    "synchronized seek",
+  );
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+  await until(
+    '!document.getElementById("comparisonDialog").open && !document.getElementById("compareOriginal").getAttribute("src")',
+    "comparison escape cleanup",
+  );
   await execute('document.getElementById("playBtn").click();');
   await until(
     'document.getElementById("video").currentTime > .1',
@@ -207,6 +285,29 @@ async function run({ win, engine, store, safeStorage }) {
   assert.ok(bounds.stageHeight > 200);
   assert.equal(bounds.startVisible, true);
   await screenshot("05-compact-dark.png");
+  await execute(
+    'document.getElementById("settingsBtn").click(); document.getElementById("checkUpdateBtn").click();',
+  );
+  await until(
+    '!document.getElementById("updateActionBtn").hidden && document.getElementById("updateStatus").textContent.includes("1.2.0")',
+    "update check UI",
+  );
+  await execute('document.getElementById("updateActionBtn").click();');
+  await until(
+    'document.getElementById("updateActionBtn").textContent.includes("重启并安装")',
+    "verified update download UI",
+  );
+  assert.equal(updates.getState().phase, "downloaded");
+  await screenshot("08-update-settings.png");
+  await execute('document.getElementById("updateActionBtn").click();');
+  await until(
+    'document.getElementById("updateStatus").textContent.includes("安装未能启动")',
+    "installer failure recovery UI",
+  );
+  assert.equal(engine.suspended, false);
+  await execute(
+    'document.querySelector("#settingsDialog .close-dialog").click();',
+  );
   const errors = await execute("window.smokeErrors");
   assert.deepEqual(errors, []);
   const saved = JSON.parse(fs.readFileSync(store.file, "utf8"));
@@ -233,6 +334,9 @@ async function run({ win, engine, store, safeStorage }) {
       "1100x740 layout",
       "persisted task and settings",
       "no renderer errors",
+      "double-click comparison and draggable split",
+      "synchronized playback and seek, muted result, escape cleanup",
+      "update check, verified download UI and failed-install recovery",
     ],
     screenshots: [
       "01-empty-light.png",
@@ -240,6 +344,8 @@ async function run({ win, engine, store, safeStorage }) {
       "03-result-light.png",
       "04-result-dark.png",
       "05-compact-dark.png",
+      "07-video-comparison.png",
+      "08-update-settings.png",
     ],
   };
 }
