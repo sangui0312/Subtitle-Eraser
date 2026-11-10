@@ -4,6 +4,12 @@
 
 [下载最新版](https://github.com/sangui0312/Subtitle-Eraser/releases/latest) · [版本记录](https://github.com/sangui0312/Subtitle-Eraser/releases)
 
+## 1.1.3
+
+- 修复视频拖入时文件列表跨界面传递失败的问题，支持中文和带空格的文件路径。
+- 增加正在导入、正在加载预览以及导入失败提示。
+- 精简公司内部使用界面，保留通用服务设置、任务状态和结果保存。
+
 ## 1.1.0
 
 1.1.2 补齐安装器的默认目录声明。目录页首次打开和浏览选择盘符、父目录时，自动带上 `SubtitleEraser` 子文件夹。安装目录规则已写入项目指令，并通过 `build.beforePack` 在每次打包时执行检查。
@@ -17,7 +23,7 @@
 
 ## 使用
 
-1. 下载并安装 `SubtitleEraser-Setup-1.1.2-x64.exe`，默认安装文件夹为 `SubtitleEraser`。
+1. 下载并安装 `SubtitleEraser-Setup-1.1.3-x64.exe`，默认安装文件夹为 `SubtitleEraser`。
 2. 打开设置，填写自己的 AI MediaKit API Key。
 3. 拖入视频、点击添加视频，或者添加 HTTP/HTTPS 视频直链。
 4. 使用自动识别处理底部字幕，或者切换手动框选，在原视频预览上拖动选区。

@@ -281,6 +281,7 @@ test("a conflicting output file is preserved and a new name is chosen", async (t
 
 test("invalid inputs are rejected before creating or queueing tasks", (t) => {
   const { engine } = setup(t);
+  assert.throws(() => engine.addFiles([]), /没有读取到视频文件/);
   assert.throws(() => engine.addURL("file:///C:/private.mp4"));
   assert.throws(() => engine.addURL("https://name:password@example.com/a.mp4"));
   assert.throws(() =>

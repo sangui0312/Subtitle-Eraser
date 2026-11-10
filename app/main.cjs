@@ -191,14 +191,6 @@ function installIPC() {
     engine.commit();
     engine.schedule(0);
   });
-  handle("docs:open", (which) => {
-    const links = {
-      key: "https://console.volcengine.com/imp/ai-mediakit/settings",
-      api: "https://docs.volcengine.com/docs/intelligent-processing/erase-video-subtitle-pro?lang=zh",
-    };
-    if (!links[which]) throw new Error("链接无效。");
-    return shell.openExternal(links[which]);
-  });
 }
 
 function mediaResponse(request) {

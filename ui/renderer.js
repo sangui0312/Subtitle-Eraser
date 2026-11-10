@@ -37,6 +37,7 @@ let drawing = null;
 let toastTimer;
 let dragDepth = 0;
 let actionPending = false;
+let importPending = false;
 
 function icon(name) {
   return `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -132,6 +133,7 @@ function renderPreview(task) {
     const video = $("video");
     video.pause();
     $("previewError").hidden = true;
+    $("previewLoading").hidden = !task;
     $("playBtn").disabled = true;
     $("fullscreenBtn").disabled = true;
     $("seekBar").disabled = true;
@@ -195,9 +197,6 @@ function renderSettings(task) {
   }
   $("outputFolder").textContent = state.settings.outputDir || "选择文件夹";
   $("folderBtn").title = state.settings.outputDir;
-  $("estimatedCost").textContent = task?.duration
-    ? `约 ¥${(task.duration / 60).toFixed(2)}`
-    : "按视频时长";
   const start = $("startBtn");
   start.classList.toggle("completed-action", task?.state === "completed");
   let label = "开始擦除";
@@ -238,17 +237,18 @@ function renderStatus(task) {
     const details = {
       draft: "选择自动识别或手动框选，确认参数后开始处理。",
       queued: "等待前面的任务完成，将依次处理。",
-      uploading: "正在将原视频上传至火山引擎，请保持网络连接。",
-      submitting: "正在向火山引擎提交字幕擦除任务。",
-      processing: "火山引擎正在处理。软件会定时查询，完成后自动下载。",
+      uploading: "正在上传原视频，请保持网络连接。",
+      submitting: "正在提交字幕擦除任务。",
+      processing: "正在处理视频，完成后自动下载。",
       query_error: "查询暂时中断，将继续查询已有任务。",
-      submission_unknown: "提交结果暂未确认，请恢复原请求或在火山控制台核对。",
+      submission_unknown:
+        "提交结果暂未确认，请恢复原请求或核对服务端任务记录。",
       download_pending: "云端处理已完成，正在准备保存成片。",
       downloading: "正在将处理后的 MP4 保存到本机。",
       download_error:
         "云端处理已完成，可重试下载。默认结果链接有效期为 24 小时。",
       completed: "成片已保存到本机，可切换上方的“擦除结果”预览。",
-      cloud_failed: "云端处理失败，请查看错误详情并核对火山控制台记录。",
+      cloud_failed: "处理失败，请查看错误详情并核对服务端任务记录。",
       error: "检查文件、网络和设置后，可再次开始。",
     };
     detail = task.error || details[task.state];
@@ -303,15 +303,39 @@ function render() {
   renderStatus(task);
 }
 
+async function importFiles(action, allowCancel = false) {
+  if (importPending) return;
+  importPending = true;
+  $("importLoading").hidden = false;
+  for (const id of ["addFilesBtn", "emptyImportBtn", "addLinkBtn"])
+    $(id).disabled = true;
+  await new Promise(requestAnimationFrame);
+  try {
+    const ids = await action();
+    if (!ids?.length) {
+      if (!allowCancel)
+        throw new Error("没有读取到视频文件，请重新拖入或点击添加视频。");
+      return;
+    }
+    selectTask(ids[0]);
+    toast(`已导入 ${ids.length} 个视频。`);
+  } catch (error) {
+    toast(error.message || "视频导入失败，请重新添加。", true);
+  } finally {
+    importPending = false;
+    $("importLoading").hidden = true;
+    for (const id of ["addFilesBtn", "emptyImportBtn", "addLinkBtn"])
+      $(id).disabled = false;
+  }
+}
 async function pickFiles() {
-  const ids = await perform(() => api.pickFiles());
-  if (ids?.length) selectTask(ids[0]);
+  await importFiles(() => api.pickFiles(), true);
 }
 function openSettings() {
   $("apiKeyInput").value = "";
   $("apiKeyInput").placeholder = state.hasKey
     ? "已保存密钥，填写新值可更换"
-    : "粘贴 AI MediaKit API Key";
+    : "粘贴处理服务 API Key";
   $("savedKeyHint").textContent =
     state.credentialError ||
     (state.hasKey
@@ -327,7 +351,7 @@ async function changeOptions(patch) {
     api.updateOptions(task.id, { ...task.options, ...patch }),
   );
 }
-async function confirmStart(ids) {
+async function startTasks(ids) {
   if (actionPending) return;
   if (!state.hasKey) {
     openSettings();
@@ -345,21 +369,6 @@ async function confirmStart(ids) {
     toast("请先为手动框选的任务选定擦除区域。", true);
     return;
   }
-  const knownDuration = jobs.every((task) => task.duration > 0);
-  const total = jobs.reduce((sum, task) => sum + task.duration, 0);
-  $("confirmText").textContent =
-    `即将处理 ${jobs.length} 个视频。\n${knownDuration ? `视频总时长 ${time(total)}，预计费用约 ¥${(total / 60).toFixed(2)}。` : "部分视频时长尚未读取，费用按实际处理时长计算，单价 1 元 / 分钟。"}`;
-  const confirmed = await new Promise((resolve) => {
-    const dialog = $("confirmDialog");
-    dialog.addEventListener(
-      "close",
-      () => resolve(dialog.returnValue === "start"),
-      { once: true },
-    );
-    dialog.returnValue = "";
-    dialog.showModal();
-  });
-  if (!confirmed) return;
   actionPending = true;
   renderSettings(current());
   await perform(() => api.start(ids));
@@ -375,7 +384,7 @@ async function primaryAction() {
     ["download_error", "query_error", "submission_unknown"].includes(task.state)
   )
     return perform(() => api.retry(task.id));
-  return confirmStart([task.id]);
+  return startTasks([task.id]);
 }
 
 function geometry() {
@@ -490,12 +499,6 @@ $("addLinkBtn").addEventListener("click", () => {
 });
 $("settingsBtn").addEventListener("click", openSettings);
 $("keyStatus").addEventListener("click", openSettings);
-$("docsBtn").addEventListener("click", () =>
-  perform(() => api.openDocs("api")),
-);
-$("getKeyBtn").addEventListener("click", () =>
-  perform(() => api.openDocs("key")),
-);
 $("themeBtn").addEventListener("click", () =>
   perform(() =>
     api.saveSettings({
@@ -583,7 +586,7 @@ $("encodeMode").addEventListener("change", (event) =>
 );
 $("startBtn").addEventListener("click", primaryAction);
 $("batchStartBtn").addEventListener("click", () =>
-  confirmStart(
+  startTasks(
     state.tasks
       .filter((task) => editable.has(task.state))
       .map((task) => task.id),
@@ -637,10 +640,14 @@ $("video").addEventListener("loadedmetadata", () => {
 $("video").addEventListener("error", () => {
   if (!current() || !$("video").getAttribute("src")) return;
   $("previewError").hidden = false;
+  $("previewLoading").hidden = true;
   $("drawHint").hidden = true;
   $("selectionOverlay").classList.remove("drawing-enabled");
   $("playBtn").disabled = true;
   $("seekBar").disabled = true;
+});
+$("video").addEventListener("loadeddata", () => {
+  $("previewLoading").hidden = true;
 });
 for (const event of ["play", "pause", "ended"])
   $("video").addEventListener(event, () => {
@@ -719,9 +726,12 @@ document.addEventListener("drop", async (event) => {
   event.preventDefault();
   dragDepth = 0;
   $("dropOverlay").hidden = true;
-  if (!event.dataTransfer.files.length) return;
-  const ids = await perform(() => api.dropFiles(event.dataTransfer.files));
-  if (ids?.length) selectTask(ids[0]);
+  const files = Array.from(event.dataTransfer?.files || []);
+  if (!files.length) {
+    toast("没有读取到视频文件，请从本地文件夹拖入视频。", true);
+    return;
+  }
+  await importFiles(() => api.dropFiles(files));
 });
 document.addEventListener("keydown", (event) => {
   if (

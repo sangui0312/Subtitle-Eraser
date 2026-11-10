@@ -191,6 +191,24 @@
               <svg><use href="#i-info" /></svg>
               <p>当前编码无法预览<br /><span>仍可使用自动识别提交处理</span></p>
             </div>
+            <div
+              id="previewLoading"
+              class="loading-overlay"
+              role="status"
+              hidden
+            >
+              <span class="loading-spinner"></span
+              ><strong>正在加载视频预览…</strong>
+            </div>
+            <div
+              id="importLoading"
+              class="loading-overlay import-loading"
+              role="status"
+              hidden
+            >
+              <span class="loading-spinner"></span><strong>正在导入视频…</strong
+              ><span>正在读取本地文件，请稍候</span>
+            </div>
             <div id="drawHint" class="draw-hint" hidden>
               <svg><use href="#i-frame" /></svg>在视频画面上拖动，框选文字区域
             </div>
@@ -300,33 +318,19 @@
               </button>
               <p class="help-text">处理完成后自动下载到本机。</p>
             </div>
-            <div class="billing-note">
-              <svg><use href="#i-info" /></svg>
-              <div>
-                <strong>精细化字幕擦除</strong>
-                <p>
-                  火山引擎按处理时长计费，1 元 / 分钟。输入最高 2K，输出最高
-                  1080P。
-                </p>
-              </div>
-            </div>
           </div>
           <div class="start-area">
-            <div class="estimate">
-              <span>本次预计费用</span><strong id="estimatedCost">—</strong>
-            </div>
             <button id="startBtn" class="button primary start-button" disabled>
               <svg><use href="#i-spark" /></svg><span>开始擦除</span
               ><svg><use href="#i-arrow" /></svg>
             </button>
-            <p class="start-caption">视频上传至火山引擎进行云端处理</p>
+            <p class="start-caption">处理完成后自动保存到所选文件夹</p>
           </div>
         </aside>
       </main>
       <footer class="app-footer">
-        <span>AI MediaKit · 精细化字幕擦除</span
-        ><span id="footerNote">任务自动保存 · 成片自动下载</span
-        ><button id="docsBtn" class="text-button">接口文档 ↗</button>
+        <span>视频处理工作台</span
+        ><span id="footerNote">任务自动保存 · 成片自动下载</span>
       </footer>
     </div>
 
@@ -335,7 +339,7 @@
         <div class="dialog-heading">
           <div>
             <h2>工作台设置</h2>
-            <p>连接你的 AI MediaKit</p>
+            <p>配置处理服务访问密钥</p>
           </div>
           <button
             type="button"
@@ -351,23 +355,15 @@
           type="password"
           autocomplete="off"
           spellcheck="false"
-          placeholder="粘贴 AI MediaKit API Key"
+          placeholder="粘贴处理服务 API Key"
         />
         <p id="savedKeyHint" class="help-text">
           密钥通过 Windows 加密保存在本机。
         </p>
         <div class="key-links">
-          <button id="getKeyBtn" type="button" class="text-button">
-            获取 API Key ↗</button
-          ><button id="clearKeyBtn" type="button" class="text-button danger">
+          <button id="clearKeyBtn" type="button" class="text-button danger">
             清除已保存密钥
           </button>
-        </div>
-        <div class="dialog-info">
-          <svg><use href="#i-info" /></svg>
-          <p>
-            使用你自己的火山引擎账户计费。密钥仅用于连接官方 AI MediaKit 接口。
-          </p>
         </div>
         <div class="dialog-actions">
           <button type="button" class="button subtle close-dialog">取消</button
@@ -430,27 +426,6 @@
         <div class="dialog-actions">
           <button type="button" class="button subtle close-dialog">取消</button
           ><button type="submit" class="button primary">添加视频</button>
-        </div>
-      </form>
-    </dialog>
-    <dialog id="confirmDialog">
-      <form method="dialog">
-        <div class="dialog-heading">
-          <div>
-            <h2>开始字幕擦除</h2>
-            <p>确认本次处理任务</p>
-          </div>
-        </div>
-        <p id="confirmText" class="confirm-text"></p>
-        <div class="dialog-info">
-          <svg><use href="#i-info" /></svg>
-          <p>
-            视频将上传至火山引擎，费用从你的火山账户扣除。已提交的云端任务会继续处理。
-          </p>
-        </div>
-        <div class="dialog-actions">
-          <button class="button subtle" value="cancel">取消</button
-          ><button class="button primary" value="start">确认并开始</button>
         </div>
       </form>
     </dialog>

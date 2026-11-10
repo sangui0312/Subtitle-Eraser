@@ -36,6 +36,16 @@ async function run({ win, engine, store, safeStorage, updates }) {
   await execute(
     'window.smokeErrors = []; window.addEventListener("error", event => window.smokeErrors.push(event.message));',
   );
+  assert.equal(
+    await execute(
+      '!/火山|费用|计费|AI MediaKit|¥/.test(document.body.innerText + Array.from(document.querySelectorAll("[placeholder]")).map(element => element.placeholder).join(" "))',
+    ),
+    true,
+  );
+  await execute(`window.importLoadingSeen = false; window.previewLoadingSeen = false; new MutationObserver(() => {
+    if (!document.getElementById('importLoading').hidden) window.importLoadingSeen = true;
+    if (!document.getElementById('previewLoading').hidden) window.previewLoadingSeen = true;
+  }).observe(document.getElementById('previewStage'), { attributes: true, subtree: true, attributeFilter: ['hidden'] });`);
   // Never use the network or paid service in this smoke test.
   const submits = [];
   let queries = 0;
@@ -91,7 +101,36 @@ async function run({ win, engine, store, safeStorage, updates }) {
     safeStorage.decryptString(Buffer.from(credentials.encrypted, "base64")),
     "smoke-placeholder-key",
   );
-  const [task] = engine.addFiles([fixture]);
+  const draggedFixture = path.join(output, "拖入测试 video.mp4");
+  const invalidFixture = path.join(output, "invalid-input.txt");
+  fs.copyFileSync(fixture, draggedFixture);
+  fs.writeFileSync(invalidFixture, "unsupported file");
+  win.webContents.debugger.attach("1.3");
+  async function dropFiles(files) {
+    const point = await execute(
+      `(() => { const rect = document.getElementById('previewStage').getBoundingClientRect(); return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }; })()`,
+    );
+    const data = { items: [], files, dragOperationsMask: 1 };
+    for (const type of ["dragEnter", "dragOver", "drop"])
+      await win.webContents.debugger.sendCommand("Input.dispatchDragEvent", {
+        type,
+        ...point,
+        data,
+      });
+  }
+  await dropFiles([invalidFixture]);
+  await until(
+    '!document.getElementById("toast").hidden && document.getElementById("toast").textContent.includes("请选择")',
+    "invalid dropped file error",
+  );
+  assert.equal(engine.tasks.length, 0);
+  await dropFiles([draggedFixture]);
+  await until(
+    'document.getElementById("taskCount").textContent === "1"',
+    "native file drag through preload bridge",
+  );
+  const task = engine.tasks[0];
+  assert.equal(task.source.path, draggedFixture);
   await until(
     'document.getElementById("video").videoWidth === 1280',
     "local video metadata",
@@ -102,6 +141,14 @@ async function run({ win, engine, store, safeStorage, updates }) {
   );
   assert.equal(task.width, 1280);
   assert.equal(task.height, 720);
+  await until(
+    'document.getElementById("previewLoading").hidden && document.getElementById("importLoading").hidden',
+    "import and preview loading completion",
+  );
+  assert.equal(
+    await execute("window.importLoadingSeen && window.previewLoadingSeen"),
+    true,
+  );
   await execute(
     'document.getElementById("previewStage").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));',
   );
@@ -167,19 +214,12 @@ async function run({ win, engine, store, safeStorage, updates }) {
   );
   await screenshot("02-region-light.png");
   await execute('document.getElementById("startBtn").click();');
-  await until(
-    'document.getElementById("confirmDialog").open',
-    "billing confirmation",
-  );
-  await execute(
-    'document.querySelector("#confirmDialog button[value=start]").click();',
-  );
   const deadline = Date.now() + 15000;
   while (task.state !== "completed" && Date.now() < deadline) await sleep(100);
   if (task.state !== "completed") {
     await screenshot("failure-after-start.png");
     const details = await execute(
-      `({ dialogOpen: document.getElementById('confirmDialog').open, dialogValue: document.getElementById('confirmDialog').returnValue, toast: document.getElementById('toast').textContent, errors: window.smokeErrors })`,
+      `({ toast: document.getElementById('toast').textContent, errors: window.smokeErrors })`,
     );
     throw new Error(
       `Start flow failed: ${JSON.stringify({ taskState: task.state, ...details })}`,
@@ -256,8 +296,19 @@ async function run({ win, engine, store, safeStorage, updates }) {
     'Math.abs(document.getElementById("compareOriginal").currentTime - 1) < .1 && Math.abs(document.getElementById("compareResult").currentTime - 1) < .1',
     "synchronized seek",
   );
-  win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
-  win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+  await execute('document.getElementById("closeComparisonBtn").focus();');
+  await win.webContents.debugger.sendCommand("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Escape",
+    code: "Escape",
+    windowsVirtualKeyCode: 27,
+  });
+  await win.webContents.debugger.sendCommand("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Escape",
+    code: "Escape",
+    windowsVirtualKeyCode: 27,
+  });
   await until(
     '!document.getElementById("comparisonDialog").open && !document.getElementById("compareOriginal").getAttribute("src")',
     "comparison escape cleanup",
@@ -325,7 +376,9 @@ async function run({ win, engine, store, safeStorage, updates }) {
       "local video preview",
       "normalized rectangle via pointer input",
       "v5.6 parameters",
-      "billing confirmation",
+      "company UI without pricing or provider branding",
+      "native drag/drop through preload bridge, Chinese paths, invalid input errors",
+      "import and preview loading indicators",
       "single submission",
       "cloud query",
       "automatic download",

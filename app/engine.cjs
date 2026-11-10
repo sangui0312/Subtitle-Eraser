@@ -90,7 +90,7 @@ class Engine {
       ) {
         task.state = "submission_unknown";
         task.error =
-          "上次提交尚未取得任务 ID。可在 23 小时内使用原请求恢复提交，或在火山控制台核对任务。";
+          "上次提交尚未取得任务 ID。可在 23 小时内使用原请求恢复提交，或核对服务端任务记录。";
       } else if (["queued", "uploading"].includes(task.state)) {
         task.state = "draft";
         task.error = "软件已重新打开，请点击开始处理继续。";
@@ -134,6 +134,8 @@ class Engine {
     return task;
   }
   addFiles(files) {
+    if (Array.isArray(files) && !files.length)
+      throw new Error("没有读取到视频文件，请重新添加。");
     if (!Array.isArray(files) || files.length > 100)
       throw new Error("一次最多添加 100 个视频。");
     const checked = files.map((file) => ({
@@ -216,7 +218,7 @@ class Engine {
     if (task.state === "submission_unknown") {
       if (!task.request || Date.now() - task.submittedAt > 23 * 3600000) {
         throw new Error(
-          "原请求已超出安全恢复时间，请先在火山控制台核对，避免重复计费。",
+          "原请求已超出安全恢复时间，请先核对服务端任务记录，避免重复提交。",
         );
       }
       if (task.identity !== this.identity())
@@ -335,7 +337,7 @@ class Engine {
         this.patch(task, {
           state: "cloud_failed",
           error: safeMessage(
-            response.error?.message || "云端处理失败，请在火山控制台核对。",
+            response.error?.message || "处理失败，请核对服务端任务记录。",
           ),
         });
       } else if (response.status === "completed") {
@@ -371,7 +373,7 @@ class Engine {
       }
       if (task.expiresAt && Date.now() / 1000 >= task.expiresAt)
         throw new Error(
-          "成片下载链接已过期，请在火山控制台核对产物。原任务将保留。",
+          "成片下载链接已过期，请核对服务端产物记录。原任务将保留。",
         );
       const directory = task.outputDir || this.store.data.settings.outputDir;
       fs.mkdirSync(directory, { recursive: true });
