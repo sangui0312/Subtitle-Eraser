@@ -1,0 +1,52 @@
+{
+  "name": "subtitle-eraser",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A simple desktop workspace for video subtitle removal",
+  "author": "Subtitle Eraser",
+  "main": "app/main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "test": "node --test tests/*.test.cjs",
+    "smoke": "electron . --smoke",
+    "dist:win": "electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "local.subtitleeraser.desktop",
+    "productName": "字幕擦除",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "app/**/*",
+      "ui/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "SubtitleEraser-Setup-${version}-${arch}.${ext}",
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": true,
+      "signExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
+      "language": "2052"
+    }
+  }
+}
