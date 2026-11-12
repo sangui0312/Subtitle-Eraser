@@ -1,8 +1,10 @@
 "use strict";
 const { EventEmitter } = require("node:events");
 const { createHash } = require("node:crypto");
+const versionParts = require("../package.json").version.split(".").map(Number);
+versionParts[2]++;
 
-function release(version = "1.2.0") {
+function release(version = versionParts.join(".")) {
   return {
     version,
     files: [

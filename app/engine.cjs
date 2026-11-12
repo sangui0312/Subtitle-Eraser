@@ -8,21 +8,30 @@ const EDITABLE = new Set(["draft", "error"]);
 const TRACKED = new Set(["processing", "query_error", "download_pending"]);
 const DEFAULT_OPTIONS = {
   modelVersion: "v5",
+  mode: "Subtitle",
   selection: "auto",
   encodeMode: "Quality",
-  rect: null,
+  rects: [],
+  timeFilter: { mode: "all", segments: [] },
+  subtitleFilter: null,
 };
 
 function options(input = {}) {
   const value = { ...DEFAULT_OPTIONS, ...input };
+  value.mode =
+    input.mode ?? (input.selection === "region" ? "Text" : "Subtitle");
   if (!["v5", "v5.6", "v4"].includes(value.modelVersion))
     throw new Error("请选择有效的算法版本。");
   if (!["auto", "region"].includes(value.selection))
     throw new Error("请选择有效的擦除模式。");
+  if (!["Subtitle", "Text"].includes(value.mode))
+    throw new Error("请选择字幕模式或画面文字模式。");
   if (!["Quality", "Size"].includes(value.encodeMode))
     throw new Error("请选择有效的输出质量。");
-  if (value.rect) {
-    const rect = value.rect;
+  const rects = input.rects ?? (input.rect ? [input.rect] : []);
+  if (!Array.isArray(rects) || rects.length > 20)
+    throw new Error("最多支持 20 个擦除区域。");
+  value.rects = rects.map((rect) => {
     const keys = [
       "top_left_x",
       "top_left_y",
@@ -31,20 +40,72 @@ function options(input = {}) {
     ];
     if (
       keys.some(
-        (key) => !Number.isFinite(rect[key]) || rect[key] < 0 || rect[key] > 1,
+        (key) =>
+          !rect ||
+          !Number.isFinite(rect[key]) ||
+          rect[key] < 0 ||
+          rect[key] > 1,
       ) ||
       rect.top_left_x >= rect.bottom_right_x ||
       rect.top_left_y >= rect.bottom_right_y
     ) {
       throw new Error("框选区域无效，请重新框选。");
     }
-    value.rect = Object.fromEntries(keys.map((key) => [key, rect[key]]));
+    return Object.fromEntries(keys.map((key) => [key, rect[key]]));
+  });
+  const timeFilter = value.timeFilter;
+  if (
+    !timeFilter ||
+    !["all", "selected", "skip"].includes(timeFilter.mode) ||
+    !Array.isArray(timeFilter.segments)
+  )
+    throw new Error("处理时间段设置无效。");
+  const segments = timeFilter.segments
+    .map((segment) => {
+      if (
+        !segment ||
+        !Number.isFinite(segment.start) ||
+        !Number.isFinite(segment.end) ||
+        segment.start < 0 ||
+        segment.end <= segment.start
+      )
+        throw new Error(
+          "时间段结束时间必须大于开始时间，且开始时间不能小于零。",
+        );
+      return { start: segment.start, end: segment.end };
+    })
+    .sort((left, right) => left.start - right.start);
+  value.timeFilter = { mode: timeFilter.mode, segments };
+  if (value.subtitleFilter !== null) {
+    const keys = [
+      "min_text_height_ratio",
+      "max_text_height_ratio",
+      "center_offset_ratio",
+    ];
+    const filter = value.subtitleFilter;
+    if (
+      !filter ||
+      keys.some(
+        (key) =>
+          !Number.isFinite(filter[key]) || filter[key] < 0 || filter[key] > 1,
+      ) ||
+      filter.min_text_height_ratio > filter.max_text_height_ratio
+    )
+      throw new Error(
+        "字幕识别参数需在 0% 至 100% 之间，最小高度不能大于最大高度。",
+      );
+    value.subtitleFilter = Object.fromEntries(
+      keys.map((key) => [key, filter[key]]),
+    );
   }
   return {
     modelVersion: value.modelVersion,
+    mode: value.mode,
     selection: value.selection,
     encodeMode: value.encodeMode,
-    rect: value.rect,
+    rects: value.rects,
+    timeFilter: value.timeFilter,
+    subtitleFilter: value.subtitleFilter,
   };
 }
 
@@ -73,6 +134,27 @@ class Engine {
     this.busy = false;
     this.stopped = false;
     this.controller = new AbortController();
+    const normalized = this.tasks.map((task) => options(task.options));
+    const needsMigration = normalized.some(
+      (config, index) =>
+        JSON.stringify(config) !== JSON.stringify(this.tasks[index].options),
+    );
+    if (needsMigration && fs.existsSync(store.file)) {
+      const backup = path.join(
+        path.dirname(store.file),
+        "backups",
+        `workspace-before-options-${Date.now()}-${randomUUID()}.json`,
+      );
+      fs.mkdirSync(path.dirname(backup), { recursive: true });
+      fs.copyFileSync(store.file, backup, fs.constants.COPYFILE_EXCL);
+      if (!fs.readFileSync(store.file).equals(fs.readFileSync(backup)))
+        throw new Error(
+          "任务记录备份校验失败，请保留个人数据目录并联系维护者。",
+        );
+    }
+    this.tasks.forEach((task, index) => {
+      task.options = normalized[index];
+    });
     for (const task of this.tasks) {
       task.progress = null;
       if (task.taskId) {
@@ -119,7 +201,7 @@ class Engine {
       id: randomUUID(),
       name,
       source,
-      options: { ...DEFAULT_OPTIONS },
+      options: options(),
       state: "draft",
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -188,8 +270,27 @@ class Engine {
       if (!EDITABLE.has(task.state))
         throw new Error("所选任务已有处理记录，请使用恢复查询或重试下载。");
       const config = options(task.options);
-      if (config.selection === "region" && !config.rect)
+      if (config.selection === "region" && !config.rects.length)
         throw new Error(`请先为“${task.name}”框选擦除区域。`);
+      if (
+        config.selection === "region" &&
+        config.mode === "Subtitle" &&
+        config.rects.every((rect) => rect.bottom_right_y <= 0.5)
+      )
+        throw new Error(
+          "字幕模式仅处理画面下半部分，请调整选区或选择画面文字模式。",
+        );
+      if (config.timeFilter.mode !== "all") {
+        if (!config.timeFilter.segments.length)
+          throw new Error("请至少添加一个处理时间段。");
+        if (
+          task.duration > 0 &&
+          config.timeFilter.segments.some(
+            (segment) => segment.end > task.duration + 0.001,
+          )
+        )
+          throw new Error(`“${task.name}”的时间段超出视频时长。`);
+      }
       if (
         task.width &&
         (Math.min(task.width, task.height) > 1440 ||
@@ -206,6 +307,11 @@ class Engine {
         error: "",
         token: randomUUID(),
         request: null,
+        startedAt: null,
+        finishedAt: null,
+        completedAt: null,
+        cloudCreatedAt: null,
+        cloudFinishedAt: null,
         outputDir: this.store.data.settings.outputDir,
         progress: null,
       });
@@ -223,7 +329,7 @@ class Engine {
       }
       if (task.identity !== this.identity())
         throw new Error("恢复提交需要使用提交时的同一个 API Key。");
-      this.patch(task, { state: "queued", error: "" });
+      this.patch(task, { state: "queued", error: "", finishedAt: null });
     } else if (
       task.taskId &&
       ["query_error", "download_error"].includes(task.state)
@@ -231,6 +337,7 @@ class Engine {
       this.patch(task, {
         state: task.resultURL ? "download_pending" : "processing",
         error: "",
+        finishedAt: null,
       });
     } else throw new Error("当前任务无法恢复，请查看任务状态。");
     this.schedule(0);
@@ -274,6 +381,7 @@ class Engine {
   async submit(task) {
     try {
       if (!task.request) {
+        this.patch(task, { startedAt: Date.now(), finishedAt: null });
         let videoURL = task.source.url;
         if (task.source.type === "local") {
           const current = localSource(task.source.path);
@@ -294,11 +402,21 @@ class Engine {
           video_url: videoURL,
           client_token: task.token,
           model_version: config.modelVersion,
-          mode: config.selection === "region" ? "Text" : "Subtitle",
+          mode: config.mode,
           output_encode_mode: config.encodeMode,
         };
         if (config.selection === "region")
-          request.erase_ratio_location = [config.rect];
+          request.erase_ratio_location = config.rects;
+        if (config.timeFilter.mode !== "all")
+          request.time_segment_filter = {
+            mode: config.timeFilter.mode,
+            segments: config.timeFilter.segments.map((segment) => ({
+              start_time: segment.start,
+              end_time: segment.end,
+            })),
+          };
+        if (config.mode === "Subtitle" && config.subtitleFilter)
+          request.subtitle_filter = config.subtitleFilter;
         this.patch(task, {
           request,
           identity: this.identity(),
@@ -322,6 +440,7 @@ class Engine {
       const uncertain = task.state === "submitting" && !error.definite;
       this.patch(task, {
         state: uncertain ? "submission_unknown" : "error",
+        finishedAt: Date.now(),
         error: safeMessage(error),
         progress: null,
       });
@@ -333,9 +452,16 @@ class Engine {
         task.taskId,
         this.controller.signal,
       );
+      const timestamps = {};
+      if (Number.isFinite(response.created_at) && response.created_at > 0)
+        timestamps.cloudCreatedAt = response.created_at * 1000;
+      if (Number.isFinite(response.finished_at) && response.finished_at > 0)
+        timestamps.cloudFinishedAt = response.finished_at * 1000;
+      Object.assign(task, timestamps);
       if (response.status === "failed") {
         this.patch(task, {
           state: "cloud_failed",
+          finishedAt: Date.now(),
           error: safeMessage(
             response.error?.message || "处理失败，请核对服务端任务记录。",
           ),
@@ -368,7 +494,12 @@ class Engine {
         fs.existsSync(task.outputPath) &&
         fs.statSync(task.outputPath).size === task.outputSize
       ) {
-        this.patch(task, { state: "completed", error: "", progress: null });
+        this.patch(task, {
+          state: "completed",
+          error: "",
+          progress: null,
+          completedAt: task.completedAt || Date.now(),
+        });
         return;
       }
       if (task.expiresAt && Date.now() / 1000 >= task.expiresAt)
@@ -442,6 +573,7 @@ class Engine {
       if (!this.stopped)
         this.patch(task, {
           state: "download_error",
+          finishedAt: Date.now(),
           error: safeMessage(error),
           progress: null,
         });

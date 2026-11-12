@@ -34,6 +34,7 @@ let selectedId = null;
 let currentView = "source";
 let previewKey = "";
 let drawing = null;
+let selectedRegion = null;
 let toastTimer;
 let dragDepth = 0;
 let actionPending = false;
@@ -83,6 +84,7 @@ async function perform(action) {
 }
 function selectTask(id) {
   drawing = null;
+  selectedRegion = null;
   selectedId = id;
   currentView = "source";
   render();
@@ -170,11 +172,20 @@ function renderPreview(task) {
 function renderSettings(task) {
   const config = task?.options || {
     selection: "auto",
+    mode: "Subtitle",
     modelVersion: "v5",
     encodeMode: "Quality",
-    rect: null,
+    rects: [],
+    timeFilter: { mode: "all", segments: [] },
+    subtitleFilter: null,
   };
   const locked = !task || !editable.has(task.state);
+  $("processingMode").value = config.mode;
+  $("processingMode").disabled = locked;
+  $("processingModeHelp").textContent =
+    config.mode === "Subtitle"
+      ? "识别画面下半部分的字幕。框选时处理与下半部分相交的区域。"
+      : "检测全画面的字幕、人名、地名等叠加文字，可框选限定范围。";
   $("autoModeBtn").classList.toggle("active", config.selection === "auto");
   $("regionModeBtn").classList.toggle("active", config.selection === "region");
   $("autoModeBtn").disabled = locked;
@@ -184,17 +195,54 @@ function renderSettings(task) {
   $("modelVersion").disabled = locked;
   $("encodeMode").disabled = locked;
   $("clearRectBtn").hidden =
-    locked || config.selection !== "region" || !config.rect;
+    locked || config.selection !== "region" || !config.rects.length;
+  $("addRectBtn").hidden = config.selection !== "region";
+  $("addRectBtn").disabled = locked || config.rects.length >= 20;
+  $("addRectBtn").textContent = `新增区域（${config.rects.length}/20）`;
+  $("regionList").hidden = config.selection !== "region";
+  $("regionList").innerHTML = config.rects
+    .map(
+      (_rect, index) =>
+        `<div class="region-item ${selectedRegion === index ? "active" : ""}"><button data-region="${index}" ${locked ? "disabled" : ""}>区域 ${index + 1}</button>${locked ? "" : `<button data-delete-region="${index}" aria-label="删除区域 ${index + 1}">×</button>`}</div>`,
+    )
+    .join("");
   $("modeHelp").textContent =
     config.selection === "region"
-      ? config.rect
-        ? "选区已保存。可再次拖动，重新框选文字区域。"
-        : "切换到原视频，在画面上拖动框选需要擦除的文字。"
-      : "适合画面下半部分、居中的白色字幕。";
+      ? selectedRegion === null
+        ? "在原视频上拖动添加区域，点击区域编号可选中并重画。"
+        : `已选中区域 ${selectedRegion + 1}，拖动可重画。点击“新增区域”继续添加。`
+      : config.mode === "Subtitle"
+        ? "默认检测画面下半部分的字幕。"
+        : "默认检测整个视频画面中的文字。";
   if (locked && config.selection === "region") {
     $("modeHelp").textContent =
       "本任务使用手动框选，擦除选区已保存在任务记录中。";
   }
+  $("timeRangesBtn").disabled = locked;
+  const range = config.timeFilter;
+  $("timeRangesSummary").textContent =
+    range.mode === "all"
+      ? "整段视频"
+      : `${range.mode === "selected" ? "仅处理" : "跳过"} ${range.segments.length} 个片段 · ${range.segments.map((segment) => `${segment.start}–${segment.end}秒`).join("、")}`;
+  const filter = config.subtitleFilter || {
+    min_text_height_ratio: 0.01,
+    max_text_height_ratio: config.modelVersion === "v4" ? 0.2 : 0.1,
+    center_offset_ratio: 0.08,
+  };
+  $("customFilterEnabled").checked = Boolean(config.subtitleFilter);
+  $("customFilterEnabled").disabled = locked || config.mode !== "Subtitle";
+  $("subtitleFilterFields").hidden = !config.subtitleFilter;
+  $("subtitleFilterFields").disabled = locked || config.mode !== "Subtitle";
+  $("minTextHeight").value = Number(
+    (filter.min_text_height_ratio * 100).toFixed(4),
+  );
+  $("maxTextHeight").value = Number(
+    (filter.max_text_height_ratio * 100).toFixed(4),
+  );
+  $("centerOffset").value = Number(
+    (filter.center_offset_ratio * 100).toFixed(4),
+  );
+  $("resetFilterBtn").disabled = locked || !config.subtitleFilter;
   $("outputFolder").textContent = state.settings.outputDir || "选择文件夹";
   $("folderBtn").title = state.settings.outputDir;
   const start = $("startBtn");
@@ -228,6 +276,7 @@ function renderSettings(task) {
   start.disabled = disabled;
 }
 function renderStatus(task) {
+  renderElapsed(task);
   let title = "准备就绪";
   let detail = state.hasKey
     ? "添加视频后开始字幕擦除，成片将自动保存到本机"
@@ -235,7 +284,7 @@ function renderStatus(task) {
   if (task) {
     title = statuses[task.state] || "等待处理";
     const details = {
-      draft: "选择自动识别或手动框选，确认参数后开始处理。",
+      draft: "选择处理模式和擦除范围，确认参数后开始处理。",
       queued: "等待前面的任务完成，将依次处理。",
       uploading: "正在上传原视频，请保持网络连接。",
       submitting: "正在提交字幕擦除任务。",
@@ -286,6 +335,29 @@ function renderStatus(task) {
   $("progressFill").style.width = `${realProgress ? task.progress : 0}%`;
   $("statusPercent").textContent = realProgress ? `${task.progress}%` : "";
 }
+function renderElapsed(task = current()) {
+  const cloud = $("cloudElapsedTime");
+  cloud.hidden = !task?.taskId;
+  cloud.textContent = "云端任务耗时未记录";
+  if (task?.cloudCreatedAt > 0 && task.cloudFinishedAt >= task.cloudCreatedAt)
+    cloud.textContent = `云端任务耗时 ${elapsedDuration(task.cloudFinishedAt - task.cloudCreatedAt)}`;
+  const element = $("elapsedTime");
+  element.hidden = !task || ["draft", "queued"].includes(task.state);
+  if (element.hidden) return;
+  if (!Number.isFinite(task.startedAt) || task.startedAt <= 0) {
+    element.textContent = "耗时未记录";
+    return;
+  }
+  const end = task.completedAt || task.finishedAt || Date.now();
+  element.textContent = `${task.state === "completed" ? "总耗时" : "已耗时"} ${elapsedDuration(end - task.startedAt)}`;
+}
+function elapsedDuration(milliseconds) {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor(seconds / 60) % 60;
+  return `${hours ? `${hours}小时` : ""}${minutes || hours ? `${minutes}分` : ""}${seconds % 60}秒`;
+}
+setInterval(() => renderElapsed(), 1000);
 function render() {
   document.documentElement.dataset.theme = state.settings.theme;
   $("footerNote").textContent =
@@ -347,9 +419,10 @@ function openSettings() {
 async function changeOptions(patch) {
   const task = current();
   if (!task || !editable.has(task.state)) return;
-  await perform(() =>
+  const result = await perform(() =>
     api.updateOptions(task.id, { ...task.options, ...patch }),
   );
+  if (result === null) render();
 }
 async function startTasks(ids) {
   if (actionPending) return;
@@ -363,7 +436,8 @@ async function startTasks(ids) {
   if (!jobs.length) return;
   if (
     jobs.some(
-      (task) => task.options.selection === "region" && !task.options.rect,
+      (task) =>
+        task.options.selection === "region" && !task.options.rects.length,
     )
   ) {
     toast("请先为手动框选的任务选定擦除区域。", true);
@@ -435,60 +509,79 @@ function renderOverlay() {
   overlay.replaceChildren();
   const task = current();
   const box = geometry();
-  const rect = drawing ? drawnRectangle() : task?.options.rect;
+  const rects = [...(task?.options.rects || [])];
+  if (drawing) {
+    if (drawing.regionIndex === null) rects.push(drawnRectangle());
+    else rects[drawing.regionIndex] = drawnRectangle();
+  }
   if (
     !box ||
-    !rect ||
+    !rects.length ||
     task?.options.selection !== "region" ||
     currentView !== "source"
   )
     return;
-  const x = box.left + rect.top_left_x * box.width;
-  const y = box.top + rect.top_left_y * box.height;
-  const width = (rect.bottom_right_x - rect.top_left_x) * box.width;
-  const height = (rect.bottom_right_y - rect.top_left_y) * box.height;
   overlay.setAttribute(
     "viewBox",
     `0 0 ${box.bounds.width} ${box.bounds.height}`,
   );
-  const selection = document.createElementNS(
-    "http://www.w3.org/2000/svg",
-    "rect",
-  );
-  for (const [key, value] of Object.entries({
-    x,
-    y,
-    width,
-    height,
-    rx: 3,
-    fill: "#9a81ff22",
-    stroke: "#a58bff",
-    "stroke-width": 2,
-  }))
-    selection.setAttribute(key, value);
-  overlay.append(selection);
-  for (const [cx, cy] of [
-    [x, y],
-    [x + width, y],
-    [x, y + height],
-    [x + width, y + height],
-  ]) {
-    const corner = document.createElementNS(
+  rects.forEach((rect, index) => {
+    const x = box.left + rect.top_left_x * box.width;
+    const y = box.top + rect.top_left_y * box.height;
+    const width = (rect.bottom_right_x - rect.top_left_x) * box.width;
+    const height = (rect.bottom_right_y - rect.top_left_y) * box.height;
+    const selection = document.createElementNS(
       "http://www.w3.org/2000/svg",
       "rect",
     );
     for (const [key, value] of Object.entries({
-      x: cx - 3,
-      y: cy - 3,
-      width: 6,
-      height: 6,
-      rx: 1,
-      fill: "#d3c5ff",
-      stroke: "#7c61ce",
+      x,
+      y,
+      width,
+      height,
+      rx: 3,
+      fill: "#9a81ff22",
+      stroke: "#a58bff",
+      "stroke-width": selectedRegion === index ? 3 : 2,
     }))
-      corner.setAttribute(key, value);
-    overlay.append(corner);
-  }
+      selection.setAttribute(key, value);
+    overlay.append(selection);
+    const label = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "text",
+    );
+    label.setAttribute("x", x + 6);
+    label.setAttribute("y", y + 17);
+    label.setAttribute("fill", "#fff");
+    label.setAttribute("stroke", "#312552");
+    label.setAttribute("stroke-width", "3");
+    label.setAttribute("paint-order", "stroke");
+    label.setAttribute("font-size", "13");
+    label.textContent = String(index + 1);
+    overlay.append(label);
+    for (const [cx, cy] of [
+      [x, y],
+      [x + width, y],
+      [x, y + height],
+      [x + width, y + height],
+    ]) {
+      const corner = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "rect",
+      );
+      for (const [key, value] of Object.entries({
+        x: cx - 3,
+        y: cy - 3,
+        width: 6,
+        height: 6,
+        rx: 1,
+        fill: "#d3c5ff",
+        stroke: "#7c61ce",
+      }))
+        corner.setAttribute(key, value);
+      overlay.append(corner);
+    }
+  });
 }
 
 $("addFilesBtn").addEventListener("click", pickFiles);
@@ -575,8 +668,66 @@ $("regionModeBtn").addEventListener("click", async () => {
   currentView = "source";
   await changeOptions({ selection: "region" });
 });
-$("clearRectBtn").addEventListener("click", () =>
-  changeOptions({ rect: null }),
+$("processingMode").addEventListener("change", (event) =>
+  changeOptions({ mode: event.target.value }),
+);
+$("clearRectBtn").addEventListener("click", () => {
+  selectedRegion = null;
+  changeOptions({ rects: [] });
+});
+$("addRectBtn").addEventListener("click", () => {
+  selectedRegion = null;
+  renderSettings(current());
+  renderOverlay();
+});
+$("regionList").addEventListener("click", async (event) => {
+  const remove = event.target.closest("[data-delete-region]");
+  if (remove) {
+    const index = Number(remove.dataset.deleteRegion);
+    selectedRegion = null;
+    await changeOptions({
+      rects: current().options.rects.filter(
+        (_rect, position) => position !== index,
+      ),
+    });
+    return;
+  }
+  const button = event.target.closest("[data-region]");
+  if (button) {
+    selectedRegion = Number(button.dataset.region);
+    renderSettings(current());
+    renderOverlay();
+  }
+});
+$("timeRangesBtn").addEventListener("click", () => {
+  const task = current();
+  if (!task || !editable.has(task.state)) return;
+  $("video").pause();
+  window.timeRanges.open(task);
+});
+function saveSubtitleFilter() {
+  const inputs = [$("minTextHeight"), $("maxTextHeight"), $("centerOffset")];
+  if (inputs.some((input) => input.value === "" || !input.checkValidity())) {
+    toast("识别参数需为 0% 至 100% 的有效数值。", true);
+    renderSettings(current());
+    return;
+  }
+  changeOptions({
+    subtitleFilter: {
+      min_text_height_ratio: Number(inputs[0].value) / 100,
+      max_text_height_ratio: Number(inputs[1].value) / 100,
+      center_offset_ratio: Number(inputs[2].value) / 100,
+    },
+  });
+}
+$("customFilterEnabled").addEventListener("change", (event) => {
+  if (event.target.checked) saveSubtitleFilter();
+  else changeOptions({ subtitleFilter: null });
+});
+for (const id of ["minTextHeight", "maxTextHeight", "centerOffset"])
+  $(id).addEventListener("change", saveSubtitleFilter);
+$("resetFilterBtn").addEventListener("click", () =>
+  changeOptions({ subtitleFilter: null }),
 );
 $("modelVersion").addEventListener("change", (event) =>
   changeOptions({ modelVersion: event.target.value }),
@@ -668,8 +819,17 @@ $("selectionOverlay").addEventListener("pointerdown", (event) => {
     return;
   const point = pointerPosition(event);
   if (!point) return;
+  if (selectedRegion === null && current().options.rects.length >= 20) {
+    toast("最多支持 20 个擦除区域，可选中已有区域重新框选。", true);
+    return;
+  }
   $("video").pause();
-  drawing = { taskId: selectedId, start: point, end: point };
+  drawing = {
+    taskId: selectedId,
+    regionIndex: selectedRegion,
+    start: point,
+    end: point,
+  };
   $("selectionOverlay").setPointerCapture(event.pointerId);
   renderOverlay();
 });
@@ -684,6 +844,7 @@ $("selectionOverlay").addEventListener("pointermove", (event) => {
 $("selectionOverlay").addEventListener("pointerup", async (event) => {
   if (!drawing) return;
   const taskId = drawing.taskId;
+  const regionIndex = drawing.regionIndex;
   const point = pointerPosition(event, true);
   if (point) drawing.end = point;
   const rect = drawnRectangle();
@@ -695,7 +856,10 @@ $("selectionOverlay").addEventListener("pointerup", async (event) => {
     rect.bottom_right_x - rect.top_left_x >= 0.01 &&
     rect.bottom_right_y - rect.top_left_y >= 0.01
   ) {
-    await changeOptions({ rect });
+    const rects = [...current().options.rects];
+    if (regionIndex === null) rects.push(rect);
+    else rects[regionIndex] = rect;
+    await changeOptions({ rects });
   } else {
     renderOverlay();
     toast("选区太小，请拖动框选完整文字区域。");

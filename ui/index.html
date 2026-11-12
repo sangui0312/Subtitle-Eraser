@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="styles.css" />
     <script src="compare.js" defer></script>
     <script src="updates.js" defer></script>
+    <script src="time-ranges.js" defer></script>
     <script src="renderer.js" defer></script>
   </head>
   <body>
@@ -255,6 +256,8 @@
             </div>
             <div class="status-content">
               <strong id="statusTitle">准备就绪</strong>
+              <span id="elapsedTime" hidden aria-live="off"></span>
+              <span id="cloudElapsedTime" hidden></span>
               <p id="statusDetail">配置 API Key 后，即可开始字幕擦除</p>
               <div id="progressTrack" class="progress-track" hidden>
                 <div id="progressFill"></div>
@@ -274,11 +277,21 @@
               <svg class="heading-icon"><use href="#i-spark" /></svg>
             </div>
             <div class="setting-section">
+              <label for="processingMode" class="field-label">处理模式</label>
+              <select id="processingMode">
+                <option value="Subtitle">字幕模式</option>
+                <option value="Text">画面文字模式</option>
+              </select>
+              <p id="processingModeHelp" class="help-text">
+                识别画面下半部分的字幕。
+              </p>
+            </div>
+            <div class="setting-section">
               <label class="field-label">擦除范围</label>
               <div class="mode-options">
                 <button id="autoModeBtn" class="mode-button active">
-                  <svg><use href="#i-spark" /></svg><strong>自动识别</strong
-                  ><span>识别底部字幕</span></button
+                  <svg><use href="#i-spark" /></svg><strong>默认范围</strong
+                  ><span>按模式自动识别</span></button
                 ><button id="regionModeBtn" class="mode-button">
                   <svg><use href="#i-frame" /></svg><strong>手动框选</strong
                   ><span>指定文字区域</span>
@@ -287,9 +300,20 @@
               <p id="modeHelp" class="help-text">
                 适合画面下半部分、居中的白色字幕。
               </p>
-              <button id="clearRectBtn" class="text-button" hidden>
-                清除选区，重新框选
+              <div id="regionList" class="region-list"></div>
+              <button id="addRectBtn" class="text-button" hidden>
+                新增区域
               </button>
+              <button id="clearRectBtn" class="text-button" hidden>
+                清空区域
+              </button>
+            </div>
+            <div class="setting-section">
+              <label class="field-label">处理时间</label>
+              <button id="timeRangesBtn" class="button subtle">
+                设置时间段
+              </button>
+              <p id="timeRangesSummary" class="help-text">整段视频</p>
             </div>
             <div class="setting-section">
               <label for="modelVersion" class="field-label">擦除算法</label
@@ -302,6 +326,45 @@
                 V5 适合中英文，V5.6 支持更多语种，耗时更长。
               </p>
             </div>
+            <details id="advancedOptions" class="setting-section">
+              <summary class="field-label">字幕识别高级设置</summary>
+              <label class="filter-toggle"
+                ><input
+                  id="customFilterEnabled"
+                  type="checkbox"
+                />自定义识别条件</label
+              >
+              <fieldset id="subtitleFilterFields" hidden>
+                <label for="minTextHeight">最小文字高度（画面高度 %）</label>
+                <input
+                  id="minTextHeight"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                />
+                <label for="maxTextHeight">最大文字高度（画面高度 %）</label>
+                <input
+                  id="maxTextHeight"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                />
+                <label for="centerOffset">最大水平居中偏移（画面宽度 %）</label>
+                <input
+                  id="centerOffset"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                />
+              </fieldset>
+              <button id="resetFilterBtn" class="text-button">恢复默认</button>
+              <p class="help-text">
+                仅对字幕模式生效。关闭自定义后使用算法默认条件。
+              </p>
+            </details>
             <div class="setting-section">
               <label for="encodeMode" class="field-label">输出偏好</label
               ><select id="encodeMode">
@@ -379,24 +442,88 @@
               检查更新
             </button>
           </div>
-          <p id="updateStatus" class="help-text">
-            从 GitHub Releases 获取新版安装包。
-          </p>
-          <pre id="updateNotes" hidden></pre>
-          <progress id="updateProgress" max="100" value="0" hidden></progress>
-          <div class="update-actions">
-            <button type="button" id="releasesBtn" class="text-button">
-              GitHub 发布页面 ↗</button
-            ><button
-              type="button"
-              id="updateActionBtn"
-              class="button primary"
-              hidden
-            >
-              下载更新
-            </button>
-          </div>
+          <p class="help-text">每次启动自动检查，发现新版本时提醒。</p>
         </section>
+      </form>
+    </dialog>
+    <dialog id="updateDialog" aria-labelledby="updateTitle">
+      <div class="dialog-heading">
+        <div>
+          <h2 id="updateTitle">软件更新</h2>
+          <p id="updateDialogVersion"></p>
+        </div>
+        <button
+          type="button"
+          class="icon-button close-dialog"
+          aria-label="关闭更新窗口"
+        >
+          <svg><use href="#i-close" /></svg>
+        </button>
+      </div>
+      <p id="updateStatus" class="help-text" role="status"></p>
+      <pre id="updateNotes" hidden></pre>
+      <progress id="updateProgress" max="100" value="0" hidden></progress>
+      <div class="update-actions">
+        <button type="button" id="releasesBtn" class="text-button">
+          GitHub 发布页面 ↗
+        </button>
+        <button type="button" id="retryUpdateBtn" class="button subtle" hidden>
+          重新检查
+        </button>
+        <button
+          type="button"
+          id="updateActionBtn"
+          class="button primary"
+          hidden
+        >
+          下载更新
+        </button>
+      </div>
+    </dialog>
+    <dialog id="timeRangesDialog" aria-labelledby="timeRangesTitle">
+      <form id="timeRangesForm">
+        <div class="dialog-heading">
+          <div>
+            <h2 id="timeRangesTitle">处理时间段</h2>
+            <p>定位视频后，可将播放位置填入起止时间。</p>
+          </div>
+          <button
+            type="button"
+            class="icon-button"
+            id="closeTimeRangesBtn"
+            aria-label="关闭时间段窗口"
+          >
+            <svg><use href="#i-close" /></svg>
+          </button>
+        </div>
+        <video
+          id="rangeVideo"
+          controls
+          muted
+          playsinline
+          preload="metadata"
+        ></video>
+        <label for="timeRangeMode" class="field-label">处理方式</label>
+        <select id="timeRangeMode">
+          <option value="all">整段视频</option>
+          <option value="selected">仅处理指定片段</option>
+          <option value="skip">跳过指定片段</option>
+        </select>
+        <div id="timeRangeEditor" hidden>
+          <div id="timeRangeRows"></div>
+          <button type="button" id="addTimeRangeBtn" class="button subtle">
+            添加时间段
+          </button>
+        </div>
+        <p id="timeRangeError" class="help-text error-text" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" id="cancelTimeRangesBtn" class="button subtle">
+            取消
+          </button>
+          <button type="submit" id="saveTimeRangesBtn" class="button primary">
+            保存时间段
+          </button>
+        </div>
       </form>
     </dialog>
     <dialog id="linkDialog">

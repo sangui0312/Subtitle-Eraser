@@ -3,9 +3,14 @@
   const $ = (id) => document.getElementById(id);
   const api = window.eraser.updates;
   let state;
+  const promptedVersions = new Set();
+  function openDialog() {
+    if (!$("updateDialog").open) $("updateDialog").showModal();
+  }
   function render(value) {
     state = value;
     $("updateVersion").textContent = `当前版本 ${value.currentVersion}`;
+    $("updateDialogVersion").textContent = `当前版本 ${value.currentVersion}`;
     const descriptions = {
       idle: "从 GitHub Releases 获取新版安装包。",
       checking: "正在检查 GitHub 更新…",
@@ -17,11 +22,9 @@
       error: "更新暂时不可用。",
     };
     $("updateStatus").textContent = value.error || descriptions[value.phase];
-    $("checkUpdateBtn").disabled =
-      !value.enabled ||
-      ["checking", "downloading", "downloaded", "installing"].includes(
-        value.phase,
-      );
+    $("checkUpdateBtn").disabled = !value.enabled;
+    $("retryUpdateBtn").hidden =
+      !value.enabled || !["idle", "current", "error"].includes(value.phase);
     $("updateActionBtn").hidden = !["available", "downloaded"].includes(
       value.phase,
     );
@@ -35,6 +38,10 @@
     $("updateNotes").textContent = value.notes;
     if (!value.enabled)
       $("updateStatus").textContent = "在线更新在正式安装版中可用。";
+    if (value.phase === "available" && !promptedVersions.has(value.version)) {
+      promptedVersions.add(value.version);
+      openDialog();
+    }
   }
   async function perform(action) {
     try {
@@ -43,9 +50,12 @@
       $("updateStatus").textContent = error.message;
     }
   }
-  $("checkUpdateBtn").addEventListener("click", () =>
-    perform(() => api.check()),
-  );
+  $("checkUpdateBtn").addEventListener("click", () => {
+    openDialog();
+    if (["idle", "current", "error"].includes(state?.phase))
+      perform(() => api.check());
+  });
+  $("retryUpdateBtn").addEventListener("click", () => perform(() => api.check()));
   $("updateActionBtn").addEventListener("click", () =>
     perform(() =>
       state.phase === "downloaded" ? api.install() : api.download(),

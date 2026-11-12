@@ -108,6 +108,7 @@ button {
 }
 input[type="password"],
 input[type="url"],
+input[type="number"],
 select {
   width: 100%;
   border: 1px solid var(--line);
@@ -757,6 +758,93 @@ h1 {
   font-size: 11px;
   font-weight: 600;
 }
+#elapsedTime,
+#cloudElapsedTime {
+  display: inline-block;
+  margin-left: 12px;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.region-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.region-item {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--soft);
+  font-size: 10px;
+}
+.region-item.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.region-item button {
+  padding: 6px;
+}
+#addRectBtn {
+  margin: 8px 12px 0 0;
+  color: var(--accent);
+}
+#advancedOptions summary {
+  cursor: pointer;
+}
+.filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  margin-bottom: 12px;
+}
+#subtitleFilterFields {
+  padding: 0;
+  border: 0;
+}
+#subtitleFilterFields label {
+  display: block;
+  font-size: 10px;
+  margin: 10px 0 7px;
+}
+#resetFilterBtn {
+  margin-top: 10px;
+}
+#timeRangesDialog {
+  width: 660px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+#rangeVideo {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  background: #101522;
+  border-radius: 10px;
+  margin-bottom: 18px;
+}
+.time-range-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.time-range-row label {
+  font-size: 11px;
+}
+.time-range-row input {
+  margin: 6px 0;
+}
+#addTimeRangeBtn {
+  margin-top: 12px;
+}
+.error-text {
+  color: var(--danger);
+}
 .status-content p {
   font-size: 10px;
   color: var(--muted);
@@ -1389,6 +1477,13 @@ dialog::backdrop {
 #settingsDialog {
   max-height: min(800px, calc(100vh - 40px));
   overflow-y: auto;
+}
+#updateDialog {
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+#updateDialog #updateNotes {
+  max-height: 260px;
 }
 .loading-overlay {
   position: absolute;

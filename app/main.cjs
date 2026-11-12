@@ -69,7 +69,11 @@ function snapshot() {
       progress: task.progress,
       taskId: task.taskId || "",
       createdAt: task.createdAt,
+      startedAt: task.startedAt,
+      finishedAt: task.finishedAt,
       completedAt: task.completedAt,
+      cloudCreatedAt: task.cloudCreatedAt,
+      cloudFinishedAt: task.cloudFinishedAt,
       sourceType: task.source.type,
       size: task.source.size || 0,
       sourcePreview:
@@ -344,6 +348,7 @@ async function launch() {
   );
   win.once("ready-to-show", () => win.show());
   await win.loadFile(page);
+  if (updates.enabled) void updates.check().catch(() => {});
   if (!smoke) engine.schedule(0);
   if (smoke) {
     try {
