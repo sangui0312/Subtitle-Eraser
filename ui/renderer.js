@@ -90,7 +90,10 @@ function selectTask(id) {
   render();
 }
 function receive(value) {
-  state = value;
+  state = {
+    ...value,
+    tasks: value.tasks.filter((task) => task.kind !== "enhance"),
+  };
   if (!state.tasks.some((task) => task.id === selectedId))
     selectedId = state.tasks[0]?.id || null;
   render();
@@ -276,6 +279,8 @@ function renderSettings(task) {
   start.disabled = disabled;
 }
 function renderStatus(task) {
+  $("enhanceCompleted").hidden =
+    task?.state !== "completed" || !task.outputPath;
   renderElapsed(task);
   let title = "准备就绪";
   let detail = state.hasKey
@@ -591,6 +596,12 @@ $("addLinkBtn").addEventListener("click", () => {
   $("linkDialog").showModal();
 });
 $("settingsBtn").addEventListener("click", openSettings);
+$("enhanceCompleted").addEventListener("click", async () => {
+  const task = current();
+  if (!task) return;
+  const id = await perform(() => api.enhanceOutput(task.id));
+  if (id) window.toolbox.open("enhance", id);
+});
 $("keyStatus").addEventListener("click", openSettings);
 $("themeBtn").addEventListener("click", () =>
   perform(() =>
@@ -872,21 +883,25 @@ $("selectionOverlay").addEventListener("pointercancel", () => {
 new ResizeObserver(renderOverlay).observe($("videoFrame"));
 
 document.addEventListener("dragenter", (event) => {
+  if (window.toolbox?.mode !== "subtitle") return;
   if (!Array.from(event.dataTransfer.types).includes("Files")) return;
   event.preventDefault();
   dragDepth++;
   $("dropOverlay").hidden = false;
 });
 document.addEventListener("dragover", (event) => {
+  if (window.toolbox?.mode !== "subtitle") return;
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
 });
 document.addEventListener("dragleave", (event) => {
+  if (window.toolbox?.mode !== "subtitle") return;
   event.preventDefault();
   dragDepth = Math.max(0, dragDepth - 1);
   if (!dragDepth) $("dropOverlay").hidden = true;
 });
 document.addEventListener("drop", async (event) => {
+  if (window.toolbox?.mode !== "subtitle") return;
   event.preventDefault();
   dragDepth = 0;
   $("dropOverlay").hidden = true;
@@ -898,6 +913,7 @@ document.addEventListener("drop", async (event) => {
   await importFiles(() => api.dropFiles(files));
 });
 document.addEventListener("keydown", (event) => {
+  if (window.toolbox?.mode !== "subtitle") return;
   if (
     (event.ctrlKey || event.metaKey) &&
     event.key.toLowerCase() === "o" &&

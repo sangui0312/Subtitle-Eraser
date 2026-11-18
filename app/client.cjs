@@ -229,6 +229,17 @@ class Client {
   submit(body, signal) {
     return this.json("/api/v1/tools/erase-video-subtitle-pro", body, signal);
   }
+  submitEnhance(route, body, signal) {
+    if (
+      ![
+        "enhance-video",
+        "enhance-video-fast",
+        "enhance-video-generative",
+      ].includes(route)
+    )
+      throw new Error("画质增强接口无效。");
+    return this.json(`/api/v1/tools/${route}`, body, signal);
+  }
   query(id, signal) {
     return this.json(
       `/api/v1/tasks/${encodeURIComponent(id)}`,

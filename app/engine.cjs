@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { MIME, publicURL, safeMessage } = require("./client.cjs");
+const { enhanceOptions, enhanceRequest } = require("./enhance.cjs");
 
 const EDITABLE = new Set(["draft", "error"]);
 const TRACKED = new Set(["processing", "query_error", "download_pending"]);
@@ -109,7 +110,7 @@ function options(input = {}) {
   };
 }
 
-function localSource(file) {
+function localSource(file, kind = "subtitle") {
   if (typeof file !== "string" || !path.isAbsolute(file))
     throw new Error("视频文件路径无效。");
   const extension = path.extname(file).toLowerCase();
@@ -117,7 +118,8 @@ function localSource(file) {
     throw new Error("请选择 MP4、MOV、MKV、AVI、FLV、TS、WMV 或 WebM 视频。");
   const stat = fs.statSync(file);
   if (!stat.isFile() || !stat.size) throw new Error("视频文件为空或无法读取。");
-  if (stat.size > 5 * 1024 ** 3) throw new Error("单个视频最大支持 5 GB。");
+  if (kind !== "enhance" && stat.size > 5 * 1024 ** 3)
+    throw new Error("单个视频最大支持 5 GB。");
   return { type: "local", path: file, size: stat.size, mtime: stat.mtimeMs };
 }
 
@@ -134,7 +136,11 @@ class Engine {
     this.busy = false;
     this.stopped = false;
     this.controller = new AbortController();
-    const normalized = this.tasks.map((task) => options(task.options));
+    const normalized = this.tasks.map((task) =>
+      task.kind === "enhance"
+        ? enhanceOptions(task.options)
+        : options(task.options),
+    );
     const needsMigration = normalized.some(
       (config, index) =>
         JSON.stringify(config) !== JSON.stringify(this.tasks[index].options),
@@ -196,12 +202,15 @@ class Engine {
     Object.assign(task, values, { updatedAt: Date.now() });
     this.commit();
   }
-  add(source, name) {
+  add(source, name, kind = "subtitle") {
+    if (!["subtitle", "enhance"].includes(kind))
+      throw new Error("工具类型无效。");
     const task = {
       id: randomUUID(),
+      kind,
       name,
       source,
-      options: options(),
+      options: kind === "enhance" ? enhanceOptions() : options(),
       state: "draft",
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -215,32 +224,49 @@ class Engine {
     this.commit();
     return task;
   }
-  addFiles(files) {
+  addFiles(files, kind = "subtitle") {
     if (Array.isArray(files) && !files.length)
       throw new Error("没有读取到视频文件，请重新添加。");
     if (!Array.isArray(files) || files.length > 100)
       throw new Error("一次最多添加 100 个视频。");
     const checked = files.map((file) => ({
-      source: localSource(file),
+      source: localSource(file, kind),
       name: path.basename(file),
     }));
-    return checked.map((item) => this.add(item.source, item.name));
+    return checked.map((item) => this.add(item.source, item.name, kind));
   }
-  addURL(value) {
+  addURL(value, kind = "subtitle") {
     if (typeof value !== "string" || value.length > 12000)
       throw new Error("视频地址过长或无效。");
-    const url = publicURL(value.trim());
+    const raw = value.trim();
+    const url =
+      kind === "enhance" && /^(vod|tos|mediakit):\/\/.+/.test(raw)
+        ? raw
+        : publicURL(raw);
     let name = "网络视频.mp4";
     try {
       name = decodeURIComponent(new URL(url).pathname.split("/").pop()) || name;
     } catch {}
-    return this.add({ type: "url", url }, name.slice(0, 200));
+    return this.add({ type: "url", url }, name.slice(0, 200), kind);
+  }
+  enhanceOutput(id) {
+    const source = this.task(id);
+    if (source.state !== "completed" || !source.outputPath)
+      throw new Error("请先完成并保存视频结果。");
+    return this.add(
+      localSource(source.outputPath, "enhance"),
+      path.basename(source.outputPath),
+      "enhance",
+    );
   }
   update(id, input) {
     const task = this.task(id);
     if (!EDITABLE.has(task.state))
       throw new Error("当前任务已提交，请完成后重新导入以更改参数。");
-    this.patch(task, { options: options(input), error: "" });
+    this.patch(task, {
+      options: task.kind === "enhance" ? enhanceOptions(input) : options(input),
+      error: "",
+    });
   }
   metadata(id, { duration, width, height }) {
     const task = this.task(id);
@@ -269,6 +295,27 @@ class Engine {
     for (const task of jobs) {
       if (!EDITABLE.has(task.state))
         throw new Error("所选任务已有处理记录，请使用恢复查询或重试下载。");
+      if (task.kind === "enhance") {
+        const config = enhanceOptions(task.options);
+        const short = Math.min(task.width, task.height);
+        const long = Math.max(task.width, task.height);
+        const maxShort = config.version === "generative" ? 1080 : 1440;
+        const maxLong = config.version === "generative" ? 1920 : 2560;
+        if (
+          short &&
+          (short < 360 || short > maxShort || long < 360 || long > maxLong)
+        )
+          throw new Error(`“${task.name}”的尺寸不符合所选增强版本要求。`);
+        if (
+          (config.settings.bit_depth === 16 ||
+            config.settings.pix_fmt === "gbrp16le") &&
+          task.duration > 40
+        )
+          throw new Error("16 位增强的视频时长不能超过 40 秒。");
+        if (task.source.type === "local")
+          localSource(task.source.path, "enhance");
+        continue;
+      }
       const config = options(task.options);
       if (config.selection === "region" && !config.rects.length)
         throw new Error(`请先为“${task.name}”框选擦除区域。`);
@@ -312,6 +359,7 @@ class Engine {
         completedAt: null,
         cloudCreatedAt: null,
         cloudFinishedAt: null,
+        cloudOutput: null,
         outputDir: this.store.data.settings.outputDir,
         progress: null,
       });
@@ -384,7 +432,7 @@ class Engine {
         this.patch(task, { startedAt: Date.now(), finishedAt: null });
         let videoURL = task.source.url;
         if (task.source.type === "local") {
-          const current = localSource(task.source.path);
+          const current = localSource(task.source.path, task.kind);
           if (
             current.size !== task.source.size ||
             current.mtime !== task.source.mtime
@@ -398,16 +446,22 @@ class Engine {
           );
         }
         const config = task.options;
-        const request = {
+        let request = {
           video_url: videoURL,
           client_token: task.token,
           model_version: config.modelVersion,
           mode: config.mode,
           output_encode_mode: config.encodeMode,
         };
-        if (config.selection === "region")
+        let requestRoute = null;
+        if (task.kind === "enhance") {
+          const enhancement = enhanceRequest(config, videoURL, task.token);
+          request = enhancement.body;
+          requestRoute = enhancement.route;
+        }
+        if (task.kind !== "enhance" && config.selection === "region")
           request.erase_ratio_location = config.rects;
-        if (config.timeFilter.mode !== "all")
+        if (task.kind !== "enhance" && config.timeFilter.mode !== "all")
           request.time_segment_filter = {
             mode: config.timeFilter.mode,
             segments: config.timeFilter.segments.map((segment) => ({
@@ -415,19 +469,28 @@ class Engine {
               end_time: segment.end,
             })),
           };
-        if (config.mode === "Subtitle" && config.subtitleFilter)
+        if (
+          task.kind !== "enhance" &&
+          config.mode === "Subtitle" &&
+          config.subtitleFilter
+        )
           request.subtitle_filter = config.subtitleFilter;
         this.patch(task, {
           request,
+          requestRoute,
           identity: this.identity(),
           submittedAt: Date.now(),
         });
       }
       this.patch(task, { state: "submitting", progress: null });
-      const response = await this.client.submit(
-        task.request,
-        this.controller.signal,
-      );
+      const response =
+        task.kind === "enhance"
+          ? await this.client.submitEnhance(
+              task.requestRoute,
+              task.request,
+              this.controller.signal,
+            )
+          : await this.client.submit(task.request, this.controller.signal);
       if (!response.task_id || typeof response.task_id !== "string")
         throw new Error("提交响应缺少任务 ID，请恢复原请求或在控制台核对。");
       this.patch(task, {
@@ -469,7 +532,18 @@ class Engine {
       } else if (response.status === "completed") {
         if (!response.result?.video_url)
           throw new Error("云端任务已完成，但结果缺少视频地址。");
-        const resultURL = publicURL(response.result.video_url);
+        const rawResult = response.result.video_url;
+        if (task.kind === "enhance" && /^(vod|tos):\/\/.+/.test(rawResult)) {
+          this.patch(task, {
+            state: "completed",
+            cloudOutput: rawResult,
+            completedAt: Date.now(),
+            error: "",
+            progress: null,
+          });
+          return;
+        }
+        const resultURL = publicURL(rawResult);
         this.patch(task, {
           state: "download_pending",
           resultURL,
@@ -518,11 +592,26 @@ class Engine {
             .name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
             .slice(0, 90)
             .replace(/[. ]+$/g, "") || "视频";
-        const base = `${stem}_去字幕_${task.id.slice(0, 8)}`;
-        let candidate = path.join(directory, `${base}.mp4`);
+        const base = `${stem}_${task.kind === "enhance" ? "画质增强" : "去字幕"}_${task.id.slice(0, 8)}`;
+        const codec =
+          task.kind === "enhance" ? task.options.settings.codec : "";
+        const urlExtension = path
+          .extname(new URL(task.resultURL).pathname)
+          .toLowerCase();
+        const extension =
+          codec === "exr"
+            ? [".exr", ".zip"].includes(urlExtension)
+              ? urlExtension
+              : ".bin"
+            : ["ffv1", "prores"].includes(codec) ||
+                task.options.settings?.pix_fmt ||
+                task.options.settings?.bit_depth === 16
+              ? ".mov"
+              : ".mp4";
+        let candidate = path.join(directory, `${base}${extension}`);
         let index = 1;
         while (fs.existsSync(candidate))
-          candidate = path.join(directory, `${base}_${index++}.mp4`);
+          candidate = path.join(directory, `${base}_${index++}${extension}`);
         this.patch(task, { outputPath: candidate });
       }
       partial = `${task.outputPath}.part`;
@@ -534,6 +623,32 @@ class Engine {
         this.progress(task),
         this.controller.signal,
       );
+      if (
+        task.kind === "enhance" &&
+        task.options.settings.codec === "exr" &&
+        path.extname(task.outputPath) === ".bin"
+      ) {
+        const handle = fs.openSync(partial, "r");
+        const signature = Buffer.alloc(4);
+        try {
+          fs.readSync(handle, signature, 0, signature.length, 0);
+        } finally {
+          fs.closeSync(handle);
+        }
+        const ext = signature.equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))
+          ? ".zip"
+          : signature.equals(Buffer.from([0x76, 0x2f, 0x31, 0x01]))
+            ? ".exr"
+            : "";
+        if (ext) {
+          const base = task.outputPath.slice(0, -4);
+          let candidate = `${base}${ext}`;
+          let index = 1;
+          while (fs.existsSync(candidate))
+            candidate = `${base}_${index++}${ext}`;
+          this.patch(task, { outputPath: candidate });
+        }
+      }
       const outputSize = fs.statSync(partial).size;
       if (!outputSize) throw new Error("下载结果为空，请重试下载。");
       this.patch(task, { outputSize });

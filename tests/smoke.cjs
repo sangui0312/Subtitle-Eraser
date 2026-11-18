@@ -79,6 +79,18 @@ async function run({ win, engine, store, safeStorage, updates }) {
     false,
   );
   updates.native.checkForUpdates = checkForUpdates;
+  assert.equal(
+    await execute(
+      '!document.getElementById("toolHome").hidden && document.querySelectorAll("[data-open-tool]").length === 2',
+    ),
+    true,
+  );
+  await screenshot("11-tool-home.png");
+  await execute('document.querySelector("[data-open-tool=subtitle]").click();');
+  await until(
+    '!document.getElementById("subtitleView").hidden',
+    "open subtitle tool from home",
+  );
   await execute(
     'window.smokeErrors = []; window.addEventListener("error", event => window.smokeErrors.push(event.message));',
   );
@@ -104,6 +116,10 @@ async function run({ win, engine, store, safeStorage, updates }) {
     submit: async (body) => {
       submits.push(structuredClone(body));
       return { task_id: "smoke-cloud-task" };
+    },
+    submitEnhance: async (route, body) => {
+      submits.push({ route, ...structuredClone(body) });
+      return { task_id: "smoke-enhance-task" };
     },
     query: async () => {
       queries++;
@@ -155,9 +171,9 @@ async function run({ win, engine, store, safeStorage, updates }) {
   fs.copyFileSync(fixture, draggedFixture);
   fs.writeFileSync(invalidFixture, "unsupported file");
   win.webContents.debugger.attach("1.3");
-  async function dropFiles(files) {
+  async function dropFiles(files, target = "previewStage") {
     const point = await execute(
-      `(() => { const rect = document.getElementById('previewStage').getBoundingClientRect(); return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }; })()`,
+      `(() => { const rect = document.getElementById(${JSON.stringify(target)}).getBoundingClientRect(); return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }; })()`,
     );
     const data = { items: [], files, dragOperationsMask: 1 };
     for (const type of ["dragEnter", "dragOver", "drop"])
@@ -553,6 +569,77 @@ async function run({ win, engine, store, safeStorage, updates }) {
   await execute(
     'document.querySelector("#settingsDialog .close-dialog").click();',
   );
+  await execute('document.getElementById("enhanceCompleted").click();');
+  await until(
+    '!document.getElementById("enhanceView").hidden && document.querySelectorAll("[data-job]").length === 1',
+    "enhance completed subtitle result",
+  );
+  await until(
+    'document.getElementById("enhanceVideo").videoWidth === 1280',
+    "enhancement source preview",
+  );
+  await execute(
+    `document.getElementById('enhanceVersion').value = 'professional'; document.getElementById('enhanceVersion').dispatchEvent(new Event('change'));`,
+  );
+  await until(
+    'Boolean(document.querySelector("#enhanceFields [name=bit_depth]"))',
+    "professional enhancement controls",
+  );
+  await execute(
+    `const resolutionField = document.querySelector('#enhanceFields [name=resolution]'); resolutionField.value = '1080p'; resolutionField.dispatchEvent(new Event('change')); const depthField = document.querySelector('#enhanceFields [name=bit_depth]'); depthField.value = '10'; depthField.dispatchEvent(new Event('change')); const codecField = document.querySelector('#enhanceFields [name=codec]'); codecField.value = 'h265'; codecField.dispatchEvent(new Event('change'));`,
+  );
+  await screenshot("12-enhance-workspace.png");
+  await execute('document.getElementById("enhanceStart").click();');
+  const qualityTask = engine.tasks.find((item) => item.kind === "enhance");
+  const qualityDeadline = Date.now() + 15000;
+  while (qualityTask.state !== "completed" && Date.now() < qualityDeadline)
+    await sleep(100);
+  assert.equal(qualityTask.state, "completed", qualityTask.error);
+  assert.equal(submits[1].route, "enhance-video");
+  assert.equal(submits[1].tool_version, "professional");
+  assert.equal(submits[1].codec, "h265");
+  assert.equal(submits[1].bit_depth, 10);
+  await until(
+    '!document.getElementById("enhanceCompare").disabled',
+    "enhancement comparison available",
+  );
+  await execute('document.getElementById("enhanceCompare").click();');
+  await until(
+    'document.getElementById("comparisonDialog").open',
+    "enhancement comparison",
+  );
+  await execute(
+    'document.getElementById("closeComparisonBtn").click(); window.toolbox.open("home");',
+  );
+  assert.equal(
+    await execute('!document.getElementById("toolHome").hidden'),
+    true,
+  );
+  await execute(
+    'document.querySelector("[data-open-tool=enhance]").click(); document.getElementById("enhanceAddURL").click();',
+  );
+  await execute(
+    `document.getElementById('enhanceURL').value = 'ftp://example.com/file.mp4'; document.getElementById('enhanceURLForm').requestSubmit();`,
+  );
+  await until(
+    'document.getElementById("enhanceURLError").textContent.length > 0',
+    "invalid enhancement URL feedback",
+  );
+  await execute('document.getElementById("cancelEnhanceURL").click();');
+  await dropFiles([draggedFixture], "enhanceVideo");
+  await until(
+    'document.querySelectorAll("[data-job]").length === 2',
+    "native file drop into enhancement tool",
+  );
+  assert.equal(
+    engine.tasks.filter((item) => item.kind === "enhance").length,
+    2,
+  );
+  await execute('document.querySelectorAll("[data-remove-job]")[1].click();');
+  await until(
+    'document.querySelectorAll("[data-job]").length === 1 && document.getElementById("enhanceVersion").value === "professional" && document.querySelector("[name=bit_depth]").value === "10"',
+    "restore remaining task settings after removal",
+  );
   const errors = await execute("window.smokeErrors");
   assert.deepEqual(errors, []);
   const saved = JSON.parse(fs.readFileSync(store.file, "utf8"));
@@ -597,6 +684,8 @@ async function run({ win, engine, store, safeStorage, updates }) {
       "independent processing modes, multiple regions, selection redraw and removal",
       "subtitle filter editing and reset, time range editor and validation",
       "cloud duration and restored options after renderer restart",
+      "tool home and enhancement task created from subtitle result",
+      "professional enhancement parameters, simulated submission and comparison",
     ],
     screenshots: [
       "01-empty-light.png",
@@ -608,6 +697,8 @@ async function run({ win, engine, store, safeStorage, updates }) {
       "08-update-settings.png",
       "09-startup-update.png",
       "10-time-ranges.png",
+      "11-tool-home.png",
+      "12-enhance-workspace.png",
     ],
   };
 }

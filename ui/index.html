@@ -7,12 +7,13 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src media: https: http: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
-    <title>字幕擦除</title>
+    <title>视频工具箱</title>
     <link rel="stylesheet" href="styles.css" />
     <script src="compare.js" defer></script>
     <script src="updates.js" defer></script>
     <script src="time-ranges.js" defer></script>
     <script src="renderer.js" defer></script>
+    <script src="toolbox.js" defer></script>
   </head>
   <body>
     <svg
@@ -96,8 +97,99 @@
       </defs>
     </svg>
 
-    <div class="app-shell">
+    <section id="toolHome" class="tool-home">
+      <header class="tool-header">
+        <div>
+          <h1>视频工具箱</h1>
+          <p>选择工具开始处理视频</p>
+        </div>
+        <div>
+          <button id="homeTheme" class="button subtle">切换主题</button>
+          <button id="homeSettings" class="button subtle">设置</button>
+        </div>
+      </header>
+      <div class="tool-grid">
+        <button class="tool-card" data-open-tool="subtitle">
+          <span class="tool-card-icon">✦</span><strong>字幕擦除</strong
+          ><span>自动识别或框选画面中的文字</span
+          ><span class="tool-card-action">打开工具 →</span>
+        </button>
+        <button class="tool-card" data-open-tool="enhance">
+          <span class="tool-card-icon">◈</span><strong>画质增强</strong
+          ><span>提升清晰度、调整画面与输出规格</span
+          ><span class="tool-card-action">打开工具 →</span>
+        </button>
+      </div>
+    </section>
+    <section id="enhanceView" class="enhance-view" hidden>
+      <header class="tool-header">
+        <div>
+          <button class="text-button toolbox-back">← 返回首页</button>
+          <h1>画质增强</h1>
+        </div>
+        <div>
+          <button id="enhanceTheme" class="button subtle">切换主题</button>
+          <button id="enhanceSettings" class="button subtle">设置</button>
+        </div>
+      </header>
+      <div class="enhance-layout">
+        <aside class="panel enhance-tasks">
+          <div class="panel-heading">
+            <h2>视频任务</h2>
+            <button id="enhanceAdd" class="button primary">添加视频</button>
+          </div>
+          <button id="enhanceAddURL" class="text-button">添加视频链接</button>
+          <div id="enhanceList"></div>
+        </aside>
+        <main class="panel enhance-preview">
+          <h2 id="enhanceTitle">视频预览</h2>
+          <div class="enhance-player">
+            <video id="enhanceVideo" controls playsinline></video>
+            <p id="enhanceEmpty">添加视频，开始画质增强</p>
+          </div>
+          <div class="enhance-controls">
+            <button id="enhanceSource" class="button subtle">原视频</button
+            ><button id="enhanceResult" class="button subtle">增强结果</button
+            ><button id="enhanceCompare" class="button subtle">双击对比</button>
+          </div>
+          <p id="enhanceMessage" class="help-text"></p>
+          <button id="enhanceCopyCloud" class="text-button" hidden>
+            复制云端结果地址
+          </button>
+          <p id="enhanceElapsed" class="help-text"></p>
+          <button id="enhanceReveal" class="text-button" hidden>
+            打开成片文件夹
+          </button>
+        </main>
+        <aside class="panel enhance-options">
+          <h2>增强设置</h2>
+          <form id="enhanceForm">
+            <label class="field-label" for="enhanceVersion">增强版本</label
+            ><select id="enhanceVersion" name="version">
+              <option value="standard">标准版</option>
+              <option value="professional">专业版</option>
+              <option value="fast">极速版</option>
+              <option value="generative">大模型版</option>
+            </select>
+            <div id="enhanceFields"></div>
+            <div class="enhance-actions">
+              <button type="button" id="enhanceFolder" class="button subtle">
+                成片保存位置
+              </button>
+              <p id="enhanceFolderLabel" class="help-text"></p>
+              <button type="submit" id="enhanceSave" class="button subtle">
+                保存参数</button
+              ><button type="button" id="enhanceStart" class="button primary">
+                开始增强
+              </button>
+            </div>
+          </form>
+        </aside>
+      </div>
+    </section>
+    <div class="app-shell" id="subtitleView" hidden>
       <header class="app-header">
+        <button class="text-button toolbox-back">← 返回首页</button>
         <div class="brand">
           <div class="brand-mark">
             <svg><use href="#i-spark" /></svg>
@@ -259,6 +351,9 @@
               <span id="elapsedTime" hidden aria-live="off"></span>
               <span id="cloudElapsedTime" hidden></span>
               <p id="statusDetail">配置 API Key 后，即可开始字幕擦除</p>
+              <button id="enhanceCompleted" class="text-button" hidden>
+                增强成片 →
+              </button>
               <div id="progressTrack" class="progress-track" hidden>
                 <div id="progressFill"></div>
               </div>
@@ -397,6 +492,37 @@
       </footer>
     </div>
 
+    <dialog id="enhanceURLDialog">
+      <form id="enhanceURLForm">
+        <div class="dialog-heading">
+          <div>
+            <h2>添加视频链接</h2>
+            <p>填写视频直链或云端素材地址</p>
+          </div>
+          <button
+            type="button"
+            id="closeEnhanceURL"
+            class="icon-button"
+            aria-label="关闭"
+          >
+            <svg><use href="#i-close" /></svg>
+          </button>
+        </div>
+        <label for="enhanceURL" class="field-label">视频地址</label
+        ><input
+          id="enhanceURL"
+          type="text"
+          required
+          placeholder="https://、vod:// 或 tos://"
+        />
+        <p id="enhanceURLError" class="help-text error-text" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" id="cancelEnhanceURL" class="button subtle">
+            取消</button
+          ><button type="submit" class="button primary">添加视频</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="settingsDialog">
       <form id="settingsForm">
         <div class="dialog-heading">

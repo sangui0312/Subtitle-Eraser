@@ -7,6 +7,7 @@ const {
   shell,
   safeStorage,
   protocol,
+  clipboard,
 } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -59,6 +60,7 @@ function snapshot() {
     version: app.getVersion(),
     tasks: engine.tasks.map((task) => ({
       id: task.id,
+      kind: task.kind || "subtitle",
       name: task.name,
       state: task.state,
       options: task.options,
@@ -79,10 +81,15 @@ function snapshot() {
       sourcePreview:
         task.source.type === "local"
           ? `media://video/${task.id}/source`
-          : task.source.url,
+          : /^https?:/i.test(task.source.url)
+            ? task.source.url
+            : "",
       outputPreview:
-        task.state === "completed" ? `media://video/${task.id}/output` : "",
+        task.state === "completed" && task.outputPath
+          ? `media://video/${task.id}/output`
+          : "",
       outputPath: task.state === "completed" ? task.outputPath : "",
+      cloudOutput: task.cloudOutput || "",
       canRestoreSubmission:
         task.state === "submission_unknown" &&
         Boolean(task.request) &&
@@ -126,7 +133,7 @@ function installIPC() {
     shell.openExternal(`${REPOSITORY}/releases`),
   );
   handle("workspace:get", snapshot);
-  handle("files:pick", async () => {
+  handle("files:pick", async (kind) => {
     const picked = await dialog.showOpenDialog(win, {
       title: "添加待擦除字幕的视频",
       properties: ["openFile", "multiSelections"],
@@ -139,12 +146,19 @@ function installIPC() {
     });
     return picked.canceled
       ? []
-      : engine.addFiles(picked.filePaths).map((task) => task.id);
+      : engine.addFiles(picked.filePaths, kind).map((task) => task.id);
   });
-  handle("files:drop", (files) =>
-    engine.addFiles(files).map((task) => task.id),
+  handle("files:drop", (files, kind) =>
+    engine.addFiles(files, kind).map((task) => task.id),
   );
-  handle("tasks:add-url", (url) => engine.addURL(url).id);
+  handle("tasks:add-url", (url, kind) => engine.addURL(url, kind).id);
+  handle("tasks:enhance-output", (id) => engine.enhanceOutput(id).id);
+  handle("tasks:copy-cloud-output", (id) => {
+    const task = engine.task(id);
+    if (!task.cloudOutput || task.state !== "completed")
+      throw new Error("当前任务没有云端结果地址。");
+    clipboard.writeText(task.cloudOutput);
+  });
   handle("tasks:options", (id, value) => engine.update(id, value));
   handle("tasks:metadata", (id, value) => engine.metadata(id, value));
   handle("tasks:start", (ids) => engine.enqueue(ids));
@@ -323,7 +337,7 @@ async function launch() {
   protocol.handle("media", mediaResponse);
   installIPC();
   win = new BrowserWindow({
-    title: "字幕擦除",
+    title: "视频工具箱",
     width: 1440,
     height: 940,
     minWidth: 1060,

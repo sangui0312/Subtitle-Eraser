@@ -9,16 +9,18 @@ contextBridge.exposeInMainWorld(
   "eraser",
   Object.freeze({
     getState: () => invoke("workspace:get"),
-    pickFiles: () => invoke("files:pick"),
-    dropFiles: (files) => {
+    pickFiles: (kind) => invoke("files:pick", kind),
+    dropFiles: (files, kind) => {
       if (!Array.isArray(files) || !files.length)
         throw new Error("没有读取到视频文件，请重新拖入或使用添加视频。");
       const paths = files.map((file) => webUtils.getPathForFile(file));
       if (paths.some((file) => !file))
         throw new Error("无法读取拖入文件的本地路径，请使用添加视频。");
-      return invoke("files:drop", paths);
+      return invoke("files:drop", paths, kind);
     },
-    addURL: (url) => invoke("tasks:add-url", url),
+    addURL: (url, kind) => invoke("tasks:add-url", url, kind),
+    enhanceOutput: (id) => invoke("tasks:enhance-output", id),
+    copyCloudOutput: (id) => invoke("tasks:copy-cloud-output", id),
     updateOptions: (id, value) => invoke("tasks:options", id, value),
     metadata: (id, value) => invoke("tasks:metadata", id, value),
     start: (ids) => invoke("tasks:start", ids),
