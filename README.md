@@ -2,9 +2,9 @@
 
 在 Windows 上擦除视频字幕和画面文字，或增强视频清晰度。处理完成后，可以同步播放原片和成片，拖动分隔线查看同一帧的变化。
 
-**[下载 Windows 正式版（x64）](https://github.com/sangui0312/Subtitle-Eraser/releases/latest)**　·　[1.3.1 更新测试版](https://github.com/sangui0312/Subtitle-Eraser/releases/tag/v1.3.1)　·　[全部版本与更新记录](https://github.com/sangui0312/Subtitle-Eraser/releases)
+**[下载 Windows 正式版（x64）](https://github.com/sangui0312/Subtitle-Eraser/releases/latest)**　·　[全部版本与更新记录](https://github.com/sangui0312/Subtitle-Eraser/releases)
 
-在发布页的 **Assets** 中下载以 `-x64.exe` 结尾的安装包。日常使用请选择正式版；1.3.1 用于验证更新包下载，功能与 1.3.0 相同。
+在发布页的 **Assets** 中下载以 `-x64.exe` 结尾的安装包。
 
 ![视频工具箱首页，包含字幕擦除和画质增强两个入口](docs/images/tool-home.png)
 
